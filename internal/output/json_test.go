@@ -72,3 +72,20 @@ func TestNewEnvelopeFailure(t *testing.T) {
 		t.Fatalf("error message = %q", envelope.Errors[0].Message)
 	}
 }
+
+func TestWriteEnvelopeWithWarnings(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteEnvelopeWithWarnings(&buf, "validate", apperrors.CodeOK, "valid", nil, []string{"using default"}, func() time.Time {
+		return time.Date(2026, 6, 13, 12, 34, 56, 0, time.UTC)
+	}); err != nil {
+		t.Fatalf("WriteEnvelopeWithWarnings returned error: %v", err)
+	}
+
+	var got Envelope
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("failed to decode envelope: %v", err)
+	}
+	if len(got.Warnings) != 1 || got.Warnings[0] != "using default" {
+		t.Fatalf("Warnings = %#v", got.Warnings)
+	}
+}

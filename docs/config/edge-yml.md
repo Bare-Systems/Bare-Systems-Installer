@@ -1,0 +1,96 @@
+# edge.yml
+
+`edge.yml` is the operator-owned deployment intent file for a Bare Systems edge node. It is versioned so future schema changes can be migrated intentionally.
+
+```yaml
+apiVersion: bare.systems/v1alpha1
+kind: EdgeDeployment
+metadata:
+  name: local-edge
+spec:
+  channel: stable
+  projectName: bare-systems
+  runtime:
+    composeProjectDirectory: /opt/bare-systems/compose
+    dockerContext: default
+    profiles:
+      - core
+  modules:
+    core:
+      enabled: true
+    koala:
+      enabled: false
+    polar:
+      enabled: false
+    kodiak:
+      enabled: false
+    ursa:
+      enabled: false
+  networking:
+    publicHttpPort: 80
+    publicHttpsPort: 443
+    adminBindAddress: 0.0.0.0
+  storage:
+    root: /opt/bare-systems
+    backups: /opt/bare-systems/backups
+```
+
+## Rules
+
+- `apiVersion` must be `bare.systems/v1alpha1`.
+- `kind` must be `EdgeDeployment`.
+- `metadata.name` is required.
+- `spec.channel` and `spec.projectName` are required.
+- `core` is always required and cannot be disabled.
+- Unknown module names fail validation.
+- Unknown runtime profiles fail validation.
+- A profile is valid only when an active module declares it.
+
+## Paths
+
+Production defaults:
+
+```text
+/etc/bare-systems/edge.yml
+/etc/bare-systems/.env
+/etc/bare-systems/secrets/
+/opt/bare-systems/compose/
+/opt/bare-systems/manifests/
+/opt/bare-systems/state/
+/opt/bare-systems/bundles/
+/var/log/bare-systems/
+```
+
+## .env
+
+`.env` is for non-secret Docker Compose interpolation values only. The CLI derives these values from `edge.yml` when possible:
+
+```text
+BARE_CHANNEL
+BARE_PROJECT_NAME
+PUBLIC_HTTP_PORT
+PUBLIC_HTTPS_PORT
+ADMIN_BIND_ADDRESS
+BARE_COMPOSE_DIR
+BARE_STORAGE_ROOT
+```
+
+Do not put tokens, passwords, API keys, private keys, or TLS keys in `.env`. Validation flags secret-looking keys such as `PORTAL_TOKEN`, `PASSWORD`, `SECRET`, `API_KEY`, and `PRIVATE_KEY`.
+
+## Secrets
+
+Secrets are modeled as files under `/etc/bare-systems/secrets`. Module manifests reference those files by name and path, and rendered Compose mounts them as Compose secrets. Secret contents are not read or printed by `validate` or `config render`.
+
+## Commands
+
+Validate the deployment model:
+
+```sh
+bare-systems --config /etc/bare-systems/edge.yml validate
+```
+
+Render canonical Compose YAML:
+
+```sh
+bare-systems --config /etc/bare-systems/edge.yml config render
+```

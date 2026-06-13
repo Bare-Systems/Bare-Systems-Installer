@@ -3,10 +3,13 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	deploymentconfig "github.com/Bare-Systems/Bare-Systems-Installer/internal/config"
 	apperrors "github.com/Bare-Systems/Bare-Systems-Installer/internal/errors"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/output"
 )
@@ -121,7 +124,7 @@ func TestNestedCommandStubJSON(t *testing.T) {
 		return time.Date(2026, 6, 13, 12, 34, 56, 0, time.UTC)
 	}
 
-	code := app.Run([]string{"--json", "config", "render"}, &stdout, &stderr)
+	code := app.Run([]string{"--json", "config", "diff"}, &stdout, &stderr)
 
 	if code != apperrors.ExitGeneric {
 		t.Fatalf("exit code = %d, want %d", code, apperrors.ExitGeneric)
@@ -133,8 +136,8 @@ func TestNestedCommandStubJSON(t *testing.T) {
 	if envelope.OK {
 		t.Fatalf("OK = true, want false")
 	}
-	if envelope.Command != "config render" {
-		t.Fatalf("Command = %q, want config render", envelope.Command)
+	if envelope.Command != "config diff" {
+		t.Fatalf("Command = %q, want config diff", envelope.Command)
 	}
 	if envelope.Code != apperrors.CodeGeneric {
 		t.Fatalf("Code = %q, want %q", envelope.Code, apperrors.CodeGeneric)
@@ -153,4 +156,83 @@ func TestQuietVersionCommand(t *testing.T) {
 	if strings.TrimSpace(stdout.String()) != "dev" {
 		t.Fatalf("stdout = %q, want dev", stdout.String())
 	}
+}
+
+func TestValidateCommand(t *testing.T) {
+	configPath := writeDefaultDeployment(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := New().Run([]string{"--config", configPath, "validate"}, &stdout, &stderr)
+
+	if code != apperrors.ExitOK {
+		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Deployment model valid") {
+		t.Fatalf("stdout missing validation success: %q", stdout.String())
+	}
+}
+
+func TestConfigRenderCommand(t *testing.T) {
+	configPath := writeDefaultDeployment(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := New().Run([]string{"--config", configPath, "config", "render"}, &stdout, &stderr)
+
+	if code != apperrors.ExitOK {
+		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"services:", "tardigrade:", "bearclaw-web:"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("rendered output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestValidateCommandRejectsUnknownModule(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "edge.yml")
+	if err := os.WriteFile(configPath, []byte(`
+apiVersion: bare.systems/v1alpha1
+kind: EdgeDeployment
+metadata:
+  name: test
+spec:
+  channel: stable
+  projectName: bare-systems
+  runtime:
+    profiles: [core]
+  modules:
+    core:
+      enabled: true
+    bogus:
+      enabled: true
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := New().Run([]string{"--config", configPath, "validate"}, &stdout, &stderr)
+
+	if code != apperrors.ExitConfig {
+		t.Fatalf("exit code = %d, want %d", code, apperrors.ExitConfig)
+	}
+	if !strings.Contains(stderr.String(), `unknown module "bogus"`) {
+		t.Fatalf("stderr missing validation error: %q", stderr.String())
+	}
+}
+
+func writeDefaultDeployment(t *testing.T) string {
+	t.Helper()
+	data, err := deploymentconfig.DefaultDeploymentYAML()
+	if err != nil {
+		t.Fatalf("DefaultDeploymentYAML returned error: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "edge.yml")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return path
 }

@@ -8,7 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bare-Systems/Bare-Systems-Installer/internal/compose"
+	deploymentconfig "github.com/Bare-Systems/Bare-Systems-Installer/internal/config"
 	apperrors "github.com/Bare-Systems/Bare-Systems-Installer/internal/errors"
+	"github.com/Bare-Systems/Bare-Systems-Installer/internal/modules"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/output"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/version"
 )
@@ -30,6 +33,7 @@ type globalOptions struct {
 	quiet      bool
 	verbose    bool
 	config     string
+	envFile    string
 	projectDir string
 }
 
@@ -48,7 +52,12 @@ func (a *App) Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return a.writeHelp(stdout)
 	case "version":
 		return a.writeVersion(stdout, opts)
+	case "validate":
+		return a.runValidate(opts, stdout, stderr)
 	case "config":
+		if len(remaining) > 1 && remaining[1] == "render" {
+			return a.runConfigRender(opts, stdout, stderr)
+		}
 		return a.handleNested("config", remaining[1:], opts, stdout, stderr, []string{"render", "diff"})
 	case "module":
 		return a.handleNested("module", remaining[1:], opts, stdout, stderr, []string{"list", "enable", "disable"})
@@ -72,6 +81,7 @@ func (a *App) parseGlobalFlags(args []string, stderr io.Writer) (globalOptions, 
 	flags.BoolVar(&opts.quiet, "quiet", false, "suppress non-essential human output")
 	flags.BoolVar(&opts.verbose, "verbose", false, "emit more detailed human output")
 	flags.StringVar(&opts.config, "config", "", "path to edge.yml")
+	flags.StringVar(&opts.envFile, "env-file", "", "path to non-secret Compose interpolation values")
 	flags.StringVar(&opts.projectDir, "project-dir", "", "path to the deployment project directory")
 	flags.Usage = func() {
 		a.writeUsage(stderr)
@@ -134,6 +144,8 @@ Global flags:
   --quiet         Suppress non-essential human output.
   --verbose       Emit more detailed human output.
   --config PATH   Path to edge.yml.
+  --env-file PATH
+                  Path to non-secret Compose interpolation values.
   --project-dir PATH
                   Path to the deployment project directory.
 `, a.name, a.name)
@@ -159,6 +171,118 @@ func (a *App) writeVersion(stdout io.Writer, opts globalOptions) int {
 		fmt.Sprintf("date: %s", info.Date),
 	}
 	fmt.Fprintln(stdout, strings.Join(lines, "\n"))
+	return apperrors.ExitOK
+}
+
+type deploymentContext struct {
+	deployment       deploymentconfig.Deployment
+	configSource     string
+	envSource        string
+	env              deploymentconfig.Environment
+	validationResult deploymentconfig.ValidationResult
+	composeYAML      []byte
+	warnings         []string
+}
+
+func (a *App) loadDeploymentContext(opts globalOptions) (deploymentContext, error) {
+	configLoad, err := deploymentconfig.LoadDeployment(opts.config, opts.config == "")
+	if err != nil {
+		return deploymentContext{}, err
+	}
+
+	deployment := configLoad.Deployment
+	if opts.projectDir != "" {
+		deployment.Spec.Runtime.ComposeProjectDirectory = opts.projectDir + "/compose"
+		deployment.Spec.Storage.Root = opts.projectDir
+	}
+
+	envLoad, err := deploymentconfig.LoadEnv(opts.envFile, opts.envFile != "")
+	if err != nil {
+		return deploymentContext{}, err
+	}
+
+	registry := modules.BuiltInRegistry()
+	env := deploymentconfig.MergeEnv(deploymentconfig.DerivedEnv(deployment), envLoad.Environment)
+	validationResult, err := deploymentconfig.ValidateDeployment(deployment, env, registry)
+	if err != nil {
+		return deploymentContext{}, err
+	}
+
+	composeYAML, err := compose.Render(deployment, registry, env)
+	if err != nil {
+		return deploymentContext{}, err
+	}
+	if err := compose.ValidateRendered(composeYAML); err != nil {
+		return deploymentContext{}, err
+	}
+
+	warnings := append([]string{}, configLoad.Warnings...)
+	warnings = append(warnings, envLoad.Warnings...)
+	return deploymentContext{
+		deployment:       deployment,
+		configSource:     configLoad.Source,
+		envSource:        envLoad.Source,
+		env:              env,
+		validationResult: validationResult,
+		composeYAML:      composeYAML,
+		warnings:         warnings,
+	}, nil
+}
+
+func (a *App) runValidate(opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	ctx, err := a.loadDeploymentContext(opts)
+	if err != nil {
+		return a.writeCommandError("validate", apperrors.CodeConfig, err, opts, stdout, stderr)
+	}
+
+	data := map[string]any{
+		"configSource":   ctx.configSource,
+		"envSource":      ctx.envSource,
+		"enabledModules": ctx.validationResult.EnabledModules,
+		"profiles":       ctx.validationResult.Profiles,
+		"envKeys":        ctx.validationResult.EnvKeys,
+	}
+	if opts.json {
+		if err := output.WriteEnvelopeWithWarnings(stdout, "validate", apperrors.CodeOK, "Deployment model valid", data, ctx.warnings, a.clock); err != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitOK
+	}
+
+	if !opts.quiet {
+		fmt.Fprintln(stdout, "Deployment model valid")
+		fmt.Fprintf(stdout, "config: %s\n", ctx.configSource)
+		fmt.Fprintf(stdout, "profiles: %s\n", strings.Join(ctx.validationResult.Profiles, ","))
+	}
+	for _, warning := range ctx.warnings {
+		fmt.Fprintf(stderr, "warning: %s\n", warning)
+	}
+	return apperrors.ExitOK
+}
+
+func (a *App) runConfigRender(opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	ctx, err := a.loadDeploymentContext(opts)
+	if err != nil {
+		return a.writeCommandError("config render", apperrors.CodeConfig, err, opts, stdout, stderr)
+	}
+
+	if opts.json {
+		data := map[string]any{
+			"configSource": ctx.configSource,
+			"compose":      string(ctx.composeYAML),
+		}
+		if err := output.WriteEnvelopeWithWarnings(stdout, "config render", apperrors.CodeOK, "Rendered Compose config", data, ctx.warnings, a.clock); err != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitOK
+	}
+
+	if _, err := stdout.Write(ctx.composeYAML); err != nil {
+		return apperrors.ExitGeneric
+	}
+	for _, warning := range ctx.warnings {
+		fmt.Fprintf(stderr, "warning: %s\n", warning)
+	}
 	return apperrors.ExitOK
 }
 
@@ -202,6 +326,19 @@ func (a *App) writeUsageError(command string, opts globalOptions, stdout io.Writ
 	fmt.Fprintf(stderr, "%s: %s\n\n", a.name, message)
 	a.writeUsage(stderr)
 	return apperrors.ExitUsage
+}
+
+func (a *App) writeCommandError(command string, code apperrors.Code, err error, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	message := err.Error()
+	if opts.json {
+		if writeErr := output.WriteEnvelope(stdout, command, code, message, nil, a.clock); writeErr != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitCodeFor(code)
+	}
+
+	fmt.Fprintf(stderr, "%s: %s\n", a.name, message)
+	return apperrors.ExitCodeFor(code)
 }
 
 func topLevelCommands() []string {

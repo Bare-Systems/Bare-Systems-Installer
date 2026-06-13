@@ -56,6 +56,10 @@ bare-systems service uninstall
 
 Only `help` and `version` are implemented today. Other recognized commands return a clear not-implemented message until their dedicated tickets add real behavior.
 
+`validate` and `config render` currently implement the first deployment-model pass. They validate the built-in or configured `edge.yml` schema, built-in module manifests, non-secret `.env` values, and generated Compose YAML.
+
+See [docs/config/edge-yml.md](docs/config/edge-yml.md) and [docs/modules.md](docs/modules.md) for the deployment contract.
+
 ## JSON output
 
 Commands that support `--json` emit a stable envelope:

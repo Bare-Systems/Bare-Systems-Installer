@@ -52,6 +52,12 @@ func WriteEnvelope(w io.Writer, command string, code apperrors.Code, message str
 	return JSON(w, NewEnvelope(command, code, message, data, clock))
 }
 
+func WriteEnvelopeWithWarnings(w io.Writer, command string, code apperrors.Code, message string, data any, warnings []string, clock Clock) error {
+	envelope := NewEnvelope(command, code, message, data, clock)
+	envelope.Warnings = append([]string(nil), warnings...)
+	return JSON(w, envelope)
+}
+
 func errorsFor(code apperrors.Code, message string) []EnvelopeError {
 	if code == apperrors.CodeOK {
 		return []EnvelopeError{}

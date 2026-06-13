@@ -1,0 +1,11 @@
+# Build artifacts
+/bare-systems
+/bin/
+/dist/
+
+# Test artifacts
+/coverage.out
+
+# Local environment
+.DS_Store
+.env

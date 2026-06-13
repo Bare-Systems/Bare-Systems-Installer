@@ -18,6 +18,7 @@ go test ./...
 go run ./cmd/bare-systems --help
 go run ./cmd/bare-systems version
 go run ./cmd/bare-systems --json version
+go run ./cmd/bare-systems install
 ```
 
 ## Build

@@ -23,6 +23,8 @@ go run ./cmd/bare-systems config render
 go run ./cmd/bare-systems --json status
 go run ./cmd/bare-systems doctor
 go run ./cmd/bare-systems --project-dir ./tmp-edge bundle
+go run ./cmd/bare-systems --project-dir ./tmp-edge enroll --portal http://127.0.0.1:8080 --token-file ./token.txt
+go run ./cmd/bare-systems --project-dir ./tmp-edge --json report
 ```
 
 ## Build

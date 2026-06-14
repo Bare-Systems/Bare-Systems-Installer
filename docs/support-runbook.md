@@ -27,7 +27,7 @@ Health levels:
 | `compose` | generated Compose YAML is valid |
 | `runtime` | Compose can report container state |
 | `product-health` | module manifest health checks mapped to container health |
-| `portal` | Portal reporting status, currently marked unknown until Portal integration lands |
+| `portal` | Portal reporting status and enrollment/reporting readiness |
 
 Exit behavior:
 
@@ -66,7 +66,7 @@ Included evidence:
 - `docker compose ps --format json` output when Docker is available
 - selected service logs from enabled module manifests
 - doctor report and checks
-- Portal placeholder state
+- Portal placeholder or redacted report state
 
 ## Redaction
 
@@ -80,6 +80,8 @@ The bundle redacts secret-like assignments before writing entries. Keys containi
 - `tls_key` / `tls-key`
 
 Secret file contents under `/etc/bare-systems/secrets` are not read by the bundle workflow.
+
+Portal device credentials under `<project-dir>/state/device-token` are not read by the bundle workflow. Report spool files contain attempted heartbeat payloads and redacted failure metadata, not Portal credentials.
 
 ## Size Limits
 

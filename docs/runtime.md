@@ -49,6 +49,8 @@ bare-systems logs
 bare-systems logs <service>
 bare-systems doctor
 bare-systems bundle
+bare-systems enroll --portal https://portal.baresystems.com --token-file /path/to/token
+bare-systems report
 ```
 
 Mappings:
@@ -65,6 +67,8 @@ Mappings:
 | `logs [service]` | `docker compose logs --tail 200 [service]` |
 
 `doctor` and `bundle` use the same runtime boundaries but are support-oriented. `doctor` summarizes host, config, Compose, runtime, product health, and Portal reporting status. `bundle` writes a redacted tar.gz support artifact with rendered config, runtime state, logs, and doctor output.
+
+`enroll` and `report` are Portal-oriented. Enrollment stores the device identity under the deployment state directory and stores the device credential with `0600` permissions. Reporting sends a heartbeat/status payload to the enrolled Portal URL and spools failed network/server sends under `<project-dir>/state/reports/spool`.
 
 ## systemd
 

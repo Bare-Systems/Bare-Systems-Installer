@@ -2,11 +2,13 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"slices"
 	"strings"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/health"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/modules"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/output"
+	"github.com/Bare-Systems/Bare-Systems-Installer/internal/portal"
 	edgeruntime "github.com/Bare-Systems/Bare-Systems-Installer/internal/runtime"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/version"
 )
@@ -42,6 +45,8 @@ type globalOptions struct {
 	config     string
 	envFile    string
 	projectDir string
+	portal     string
+	tokenFile  string
 }
 
 func (a *App) Run(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -65,6 +70,10 @@ func (a *App) Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return a.runDoctor(opts, stdout, stderr)
 	case "bundle":
 		return a.runBundle(opts, stdout, stderr)
+	case "enroll":
+		return a.runEnroll(remaining[1:], opts, stdout, stderr)
+	case "report":
+		return a.runReport(remaining[1:], opts, stdout, stderr)
 	case "validate":
 		return a.runValidate(opts, stdout, stderr)
 	case "config":
@@ -99,6 +108,8 @@ func (a *App) parseGlobalFlags(args []string, stderr io.Writer) (globalOptions, 
 	flags.StringVar(&opts.config, "config", "", "path to edge.yml")
 	flags.StringVar(&opts.envFile, "env-file", "", "path to non-secret Compose interpolation values")
 	flags.StringVar(&opts.projectDir, "project-dir", "", "path to the deployment project directory")
+	flags.StringVar(&opts.portal, "portal", "", "Portal base URL for enrollment")
+	flags.StringVar(&opts.tokenFile, "token-file", "", "path to one-time enrollment token")
 	flags.Usage = func() {
 		a.writeUsage(stderr)
 	}
@@ -146,6 +157,7 @@ Commands:
   rollback                 Roll back to a prior artifact set.
   doctor                   Run local diagnostics checks.
   bundle                   Create a redacted diagnostics bundle.
+  enroll                   Enroll this device with the Portal.
   report                   Send deployment status to the Portal.
   config render            Render canonical Compose config.
   config diff              Compare desired and active config.
@@ -164,6 +176,9 @@ Global flags:
                   Path to non-secret Compose interpolation values.
   --project-dir PATH
                   Path to the deployment project directory.
+  --portal URL    Portal base URL for enrollment.
+  --token-file PATH
+                  Path to one-time enrollment token.
 `, a.name, a.name)
 }
 
@@ -298,6 +313,177 @@ func (a *App) runConfigRender(opts globalOptions, stdout io.Writer, stderr io.Wr
 	}
 	for _, warning := range ctx.warnings {
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
+	}
+	return apperrors.ExitOK
+}
+
+func (a *App) runEnroll(args []string, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	var ok bool
+	opts, ok = a.parseEnrollFlags(args, opts, stderr)
+	if !ok {
+		return apperrors.ExitUsage
+	}
+	if strings.TrimSpace(opts.portal) == "" {
+		return a.writeCommandError("enroll", apperrors.CodeUsage, errors.New("--portal is required"), opts, stdout, stderr)
+	}
+	if strings.TrimSpace(opts.tokenFile) == "" {
+		return a.writeCommandError("enroll", apperrors.CodeUsage, errors.New("--token-file is required"), opts, stdout, stderr)
+	}
+
+	ctx, err := a.loadDeploymentContext(opts)
+	if err != nil {
+		return a.writeCommandError("enroll", apperrors.CodeConfig, err, opts, stdout, stderr)
+	}
+	bootstrapToken, err := portal.ReadBootstrapToken(opts.tokenFile)
+	if err != nil {
+		return a.writeCommandError("enroll", apperrors.CodeAuth, err, opts, stdout, stderr)
+	}
+	client, err := portal.NewHTTPClient(opts.portal)
+	if err != nil {
+		return a.writeCommandError("enroll", apperrors.CodeUsage, err, opts, stdout, stderr)
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil || strings.TrimSpace(hostname) == "" {
+		hostname = "unknown"
+	}
+	response, err := client.Enroll(context.Background(), portal.EnrollmentRequest{
+		EnrollmentToken:    bootstrapToken,
+		Hostname:           hostname,
+		Platform:           goruntime.GOOS,
+		Arch:               goruntime.GOARCH,
+		BareSystemsVersion: version.Current().Version,
+	})
+	if err != nil {
+		code := apperrors.CodeNetwork
+		if portal.IsAuthError(err) {
+			code = apperrors.CodeAuth
+		}
+		return a.writeCommandError("enroll", code, err, opts, stdout, stderr)
+	}
+
+	stateDir := portal.StateDir(ctx.deployment)
+	identity, err := portal.PersistEnrollment(stateDir, response, a.clock().UTC())
+	if err != nil {
+		return a.writeCommandError("enroll", apperrors.CodePermissions, err, opts, stdout, stderr)
+	}
+
+	data := map[string]any{
+		"deviceId":       identity.DeviceID,
+		"portalUrl":      identity.PortalURL,
+		"identityFile":   portal.IdentityPath(stateDir),
+		"credentialFile": identity.CredentialFile,
+		"enrolledAt":     identity.EnrolledAt,
+	}
+	if opts.json {
+		if err := output.WriteEnvelope(stdout, "enroll", apperrors.CodeOK, "Device enrolled", data, a.clock); err != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitOK
+	}
+	if !opts.quiet {
+		fmt.Fprintf(stdout, "Enrolled device %s\n", identity.DeviceID)
+		fmt.Fprintf(stdout, "identity: %s\n", portal.IdentityPath(stateDir))
+	}
+	return apperrors.ExitOK
+}
+
+func (a *App) parseEnrollFlags(args []string, opts globalOptions, stderr io.Writer) (globalOptions, bool) {
+	flags := flag.NewFlagSet("enroll", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.StringVar(&opts.portal, "portal", opts.portal, "Portal base URL")
+	flags.StringVar(&opts.tokenFile, "token-file", opts.tokenFile, "path to one-time enrollment token")
+	flags.Usage = func() {
+		fmt.Fprintf(stderr, "Usage:\n  %s [global flags] enroll --portal URL --token-file PATH\n", a.name)
+	}
+	if err := flags.Parse(args); err != nil {
+		return opts, false
+	}
+	if flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "%s: unexpected enroll argument %q\n", a.name, flags.Arg(0))
+		flags.Usage()
+		return opts, false
+	}
+	return opts, true
+}
+
+func (a *App) runReport(args []string, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 {
+		return a.writeUsageError("report "+strings.Join(args, " "), opts, stdout, stderr)
+	}
+
+	ctx, err := a.loadDeploymentContext(opts)
+	if err != nil {
+		return a.writeCommandError("report", apperrors.CodeConfig, err, opts, stdout, stderr)
+	}
+	stateDir := portal.StateDir(ctx.deployment)
+	identity, err := portal.LoadIdentity(stateDir)
+	if err != nil {
+		return a.writeCommandError("report", apperrors.CodeAuth, err, opts, stdout, stderr)
+	}
+	deviceToken, err := portal.ReadDeviceToken(identity.CredentialFile)
+	if err != nil {
+		return a.writeCommandError("report", apperrors.CodeAuth, err, opts, stdout, stderr)
+	}
+	client, err := portal.NewHTTPClient(identity.PortalURL)
+	if err != nil {
+		return a.writeCommandError("report", apperrors.CodeAuth, err, opts, stdout, stderr)
+	}
+
+	healthReport := a.evaluateHealth(ctx)
+	runtimeState, runtimeErr := a.collectRuntimeState(ctx)
+	payload := portal.BuildReportPayload(portal.ReportInput{
+		Identity:         identity,
+		Deployment:       ctx.deployment,
+		ValidationResult: ctx.validationResult,
+		ComposeYAML:      ctx.composeYAML,
+		RuntimeState:     runtimeState,
+		RuntimeError:     runtimeErr,
+		HealthReport:     healthReport,
+		CLIVersion:       version.Current(),
+		Timestamp:        a.clock().UTC(),
+		Warnings:         ctx.warnings,
+	})
+
+	if err := client.Report(context.Background(), payload, deviceToken); err != nil {
+		if portal.IsAuthError(err) {
+			return a.writeCommandError("report", apperrors.CodeAuth, err, opts, stdout, stderr)
+		}
+		spool, spoolErr := portal.SpoolReportFailure(stateDir, payload, err, a.clock().UTC())
+		if spoolErr != nil {
+			return a.writeCommandError("report", apperrors.CodePermissions, fmt.Errorf("Portal report failed and spool failed: %w", spoolErr), opts, stdout, stderr)
+		}
+		data := map[string]any{
+			"deviceId":  identity.DeviceID,
+			"spooled":   true,
+			"spoolPath": spool.Path,
+			"error":     err.Error(),
+		}
+		if opts.json {
+			if writeErr := output.WriteEnvelope(stdout, "report", apperrors.CodeNetwork, "Portal report failed; payload spooled", data, a.clock); writeErr != nil {
+				return apperrors.ExitGeneric
+			}
+			return apperrors.ExitNetwork
+		}
+		fmt.Fprintf(stderr, "%s: Portal report failed; payload spooled at %s: %s\n", a.name, spool.Path, err.Error())
+		return apperrors.ExitNetwork
+	}
+
+	data := map[string]any{
+		"deviceId":       identity.DeviceID,
+		"configRevision": payload.ConfigRevision,
+		"enabledModules": payload.EnabledModules,
+		"profiles":       payload.Profiles,
+		"healthSummary":  payload.HealthSummary,
+	}
+	if opts.json {
+		if err := output.WriteEnvelope(stdout, "report", apperrors.CodeOK, "Portal report sent", data, a.clock); err != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitOK
+	}
+	if !opts.quiet {
+		fmt.Fprintf(stdout, "Portal report sent for device %s\n", identity.DeviceID)
 	}
 	return apperrors.ExitOK
 }
@@ -537,7 +723,11 @@ func (a *App) buildDoctorReport(opts globalOptions) (deploymentContext, health.R
 	if err != nil {
 		return deploymentContext{}, health.ConfigFailure(err), err
 	}
-	report := health.Evaluate(context.Background(), health.Options{
+	return ctx, a.evaluateHealth(ctx), nil
+}
+
+func (a *App) evaluateHealth(ctx deploymentContext) health.Report {
+	return health.Evaluate(context.Background(), health.Options{
 		Deployment:       ctx.deployment,
 		ValidationResult: ctx.validationResult,
 		ComposeYAML:      ctx.composeYAML,
@@ -545,7 +735,34 @@ func (a *App) buildDoctorReport(opts globalOptions) (deploymentContext, health.R
 		Runner:           a.runner,
 		ComposeFile:      filepath.Join(ctx.deployment.ComposeProjectDirectory(), "generated.compose.yml"),
 	})
-	return ctx, report, nil
+}
+
+func (a *App) collectRuntimeState(ctx deploymentContext) (edgeruntime.RuntimeState, error) {
+	empty := edgeruntime.RuntimeState{
+		Summary: edgeruntime.StateSummary{
+			ByState:  map[string]int{},
+			ByHealth: map[string]int{},
+		},
+	}
+	if _, err := edgeruntime.CheckDocker(context.Background(), a.runner); err != nil {
+		return empty, err
+	}
+	manager := edgeruntime.Compose{
+		Runner:      a.runner,
+		ProjectDir:  ctx.deployment.ComposeProjectDirectory(),
+		ProjectName: ctx.deployment.ComposeProjectName(),
+		ComposeFile: filepath.Join(ctx.deployment.ComposeProjectDirectory(), "generated.compose.yml"),
+		Profiles:    ctx.validationResult.Profiles,
+	}
+	result, err := manager.PS(context.Background(), true)
+	if err != nil {
+		return empty, err
+	}
+	state, err := edgeruntime.ParsePSJSON(result.Stdout)
+	if err != nil {
+		return empty, err
+	}
+	return state, nil
 }
 
 func fallbackDeploymentContext(opts globalOptions, err error) deploymentContext {

@@ -14,6 +14,7 @@ This repository currently contains the initial Go scaffold:
 - JSON envelope output for supported commands
 - documented exit-code constants
 - internal packages for CLI, output, config paths, runtime constants, errors, and version metadata
+- Portal enrollment, local device identity storage, heartbeat reporting, and offline report spooling
 
 ## Quick start
 
@@ -44,6 +45,7 @@ bare-systems update
 bare-systems rollback
 bare-systems doctor
 bare-systems bundle
+bare-systems enroll
 bare-systems report
 bare-systems config render
 bare-systems config diff
@@ -54,12 +56,13 @@ bare-systems service install
 bare-systems service uninstall
 ```
 
-Implemented commands currently include `help`, `version`, `validate`, `config render`, core Docker Compose lifecycle commands, runtime status/ps/logs, and systemd service install/uninstall helpers. Other recognized commands return a clear not-implemented message until their dedicated tickets add real behavior.
+Implemented commands currently include `help`, `version`, `validate`, `config render`, core Docker Compose lifecycle commands, runtime status/ps/logs, systemd service install/uninstall helpers, Portal enrollment, and Portal reporting. Other recognized commands return a clear not-implemented message until their dedicated tickets add real behavior.
 
 `validate` and `config render` implement the first deployment-model pass. They validate the built-in or configured `edge.yml` schema, built-in module manifests, non-secret `.env` values, and generated Compose YAML.
 
 See [docs/config/edge-yml.md](docs/config/edge-yml.md) and [docs/modules.md](docs/modules.md) for the deployment contract.
 See [docs/runtime.md](docs/runtime.md) for Docker Compose and systemd behavior.
+See [docs/portal-contract.md](docs/portal-contract.md) for enrollment, identity, heartbeat, and spool behavior.
 See [docs/support-runbook.md](docs/support-runbook.md) for doctor and diagnostics bundle usage.
 
 ## JSON output

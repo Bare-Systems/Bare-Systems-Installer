@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	deploymentconfig "github.com/Bare-Systems/Bare-Systems-Installer/internal/config"
 	apperrors "github.com/Bare-Systems/Bare-Systems-Installer/internal/errors"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/output"
+	"github.com/Bare-Systems/Bare-Systems-Installer/internal/portal"
 	edgeruntime "github.com/Bare-Systems/Bare-Systems-Installer/internal/runtime"
 )
 
@@ -361,6 +364,160 @@ func TestBundleCommandCreatesArchive(t *testing.T) {
 	}
 }
 
+func TestEnrollCommandWithMockPortal(t *testing.T) {
+	projectDir := t.TempDir()
+	tokenPath := filepath.Join(projectDir, "bootstrap.token")
+	if err := os.WriteFile(tokenPath, []byte("bootstrap-secret\n"), 0o600); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	var enrollmentRequest portal.EnrollmentRequest
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/devices/enroll" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&enrollmentRequest); err != nil {
+			t.Fatalf("decode enrollment: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(portal.EnrollmentResponse{
+			DeviceID:    "dev_abc123",
+			DeviceToken: "device-secret",
+			PortalURL:   server.URL,
+		})
+	}))
+	defer server.Close()
+
+	app := New()
+	app.clock = func() time.Time {
+		return time.Date(2026, 6, 13, 12, 34, 56, 0, time.UTC)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := app.Run([]string{"--project-dir", projectDir, "enroll", "--portal", server.URL, "--token-file", tokenPath}, &stdout, &stderr)
+
+	if code != apperrors.ExitOK {
+		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	if enrollmentRequest.EnrollmentToken != "bootstrap-secret" {
+		t.Fatalf("EnrollmentToken = %q", enrollmentRequest.EnrollmentToken)
+	}
+	for _, secret := range []string{"bootstrap-secret", "device-secret"} {
+		if strings.Contains(stdout.String()+stderr.String(), secret) {
+			t.Fatalf("command output leaked %q: stdout=%q stderr=%q", secret, stdout.String(), stderr.String())
+		}
+	}
+	identity, err := portal.LoadIdentity(filepath.Join(projectDir, "state"))
+	if err != nil {
+		t.Fatalf("LoadIdentity returned error: %v", err)
+	}
+	if identity.DeviceID != "dev_abc123" || identity.PortalURL != server.URL {
+		t.Fatalf("identity = %#v", identity)
+	}
+	assertFileMode(t, identity.CredentialFile, 0o600)
+}
+
+func TestReportCommandSendsPortalHeartbeat(t *testing.T) {
+	projectDir := t.TempDir()
+	var payload portal.ReportPayload
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/devices/dev_abc123/heartbeat" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer device-secret" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode heartbeat: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	if _, err := portal.PersistEnrollment(filepath.Join(projectDir, "state"), portal.EnrollmentResponse{
+		DeviceID:    "dev_abc123",
+		DeviceToken: "device-secret",
+		PortalURL:   server.URL,
+	}, time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("PersistEnrollment returned error: %v", err)
+	}
+	runner := newCLIFakeRunner()
+	app := New()
+	app.runner = runner
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := app.Run([]string{"--project-dir", projectDir, "--json", "report"}, &stdout, &stderr)
+
+	if code != apperrors.ExitOK {
+		t.Fatalf("exit code = %d, want %d; stderr=%q stdout=%q", code, apperrors.ExitOK, stderr.String(), stdout.String())
+	}
+	if payload.DeviceID != "dev_abc123" {
+		t.Fatalf("DeviceID = %q", payload.DeviceID)
+	}
+	if !slicesContains(payload.EnabledModules, "core") {
+		t.Fatalf("enabled modules = %#v", payload.EnabledModules)
+	}
+	if payload.ServiceStatus.Summary.Total != 3 {
+		t.Fatalf("service summary = %#v", payload.ServiceStatus.Summary)
+	}
+	if payload.HealthSummary.Total == 0 {
+		t.Fatalf("health summary was not populated: %#v", payload.HealthSummary)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "device-secret") {
+		t.Fatalf("command output leaked device token")
+	}
+}
+
+func TestReportCommandSpoolsFailedPortalReport(t *testing.T) {
+	projectDir := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporarily unavailable", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	if _, err := portal.PersistEnrollment(filepath.Join(projectDir, "state"), portal.EnrollmentResponse{
+		DeviceID:    "dev_abc123",
+		DeviceToken: "device-secret",
+		PortalURL:   server.URL,
+	}, time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("PersistEnrollment returned error: %v", err)
+	}
+
+	runner := newCLIFakeRunner()
+	app := New()
+	app.runner = runner
+	app.clock = func() time.Time {
+		return time.Date(2026, 6, 13, 12, 34, 56, 0, time.UTC)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := app.Run([]string{"--project-dir", projectDir, "--json", "report"}, &stdout, &stderr)
+
+	if code != apperrors.ExitNetwork {
+		t.Fatalf("exit code = %d, want %d; stdout=%q stderr=%q", code, apperrors.ExitNetwork, stdout.String(), stderr.String())
+	}
+	spoolPath := filepath.Join(projectDir, "state", "reports", "spool", "report-20260613-123456.json")
+	if _, err := os.Stat(spoolPath); err != nil {
+		t.Fatalf("spool file missing: %v", err)
+	}
+	assertFileMode(t, spoolPath, 0o600)
+	if !strings.Contains(stdout.String(), `"spooled": true`) {
+		t.Fatalf("report JSON missing spool marker: %s", stdout.String())
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "device-secret") {
+		t.Fatalf("command output leaked device token")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run([]string{"--project-dir", projectDir, "--json", "status"}, &stdout, &stderr)
+	if code != apperrors.ExitOK {
+		t.Fatalf("status after failed report exit code = %d, stderr=%q", code, stderr.String())
+	}
+}
+
 func TestRuntimeCommandReportsMissingDocker(t *testing.T) {
 	runner := newCLIFakeRunner()
 	runner.missingDocker = true
@@ -447,4 +604,24 @@ func (r *cliFakeRunner) sawComposeDir(dir string) bool {
 		}
 	}
 	return sawDeploymentCompose
+}
+
+func assertFileMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("mode %s = %#o, want %#o", path, got, want)
+	}
+}
+
+func slicesContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

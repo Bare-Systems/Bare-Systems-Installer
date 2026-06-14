@@ -1,0 +1,71 @@
+version: 2
+
+project_name: bare-systems
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: bare-systems
+    main: ./cmd/bare-systems
+    binary: bare-systems
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.versionValue={{ .Version }} -X main.commitValue={{ .ShortCommit }} -X main.dateValue={{ .Date }}
+
+archives:
+  - id: cli-archives
+    ids:
+      - bare-systems
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - README.md
+      - docs/release.md
+      - docs/runtime.md
+
+nfpms:
+  - id: linux-packages
+    ids:
+      - bare-systems
+    package_name: bare-systems
+    vendor: Bare Systems
+    homepage: https://github.com/Bare-Systems/Bare-Systems-Installer
+    maintainer: Bare Systems <support@baresystems.com>
+    description: Bare Systems edge deployment installer CLI
+    license: Proprietary
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    section: utils
+    priority: optional
+    contents:
+      - src: docs/release.md
+        dst: /usr/share/doc/bare-systems/release.md
+      - src: docs/runtime.md
+        dst: /usr/share/doc/bare-systems/runtime.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

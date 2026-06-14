@@ -15,6 +15,7 @@ This repository currently contains the initial Go scaffold:
 - documented exit-code constants
 - internal packages for CLI, output, config paths, runtime constants, errors, and version metadata
 - Portal enrollment, local device identity storage, heartbeat reporting, and offline report spooling
+- CI/release automation, Linux packages, checksums, attestations, and install-script distribution
 
 ## Quick start
 
@@ -63,6 +64,7 @@ Implemented commands currently include `help`, `version`, `validate`, `config re
 See [docs/config/edge-yml.md](docs/config/edge-yml.md) and [docs/modules.md](docs/modules.md) for the deployment contract.
 See [docs/runtime.md](docs/runtime.md) for Docker Compose and systemd behavior.
 See [docs/portal-contract.md](docs/portal-contract.md) for enrollment, identity, heartbeat, and spool behavior.
+See [docs/release.md](docs/release.md) for release channels, artifacts, verification, and install paths.
 See [docs/support-runbook.md](docs/support-runbook.md) for doctor and diagnostics bundle usage.
 
 ## JSON output

@@ -40,7 +40,23 @@ Release builds can inject version metadata with linker flags:
 ```sh
 go build \
   -trimpath \
-  -ldflags "-X main.versionValue=0.1.0 -X main.commitValue=$(git rev-parse --short HEAD) -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -ldflags "-X main.versionValue=0.1.0 -X main.commitValue=$(git rev-parse --short HEAD) -X main.dateValue=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -o bare-systems \
   ./cmd/bare-systems
+```
+
+## Release Validation
+
+Release automation is defined in `.goreleaser.yaml` and `.github/workflows/release.yml`. When GoReleaser is installed locally, run:
+
+```sh
+goreleaser check
+goreleaser release --snapshot --clean
+```
+
+The install script can be syntax-checked without downloading artifacts:
+
+```sh
+bash -n scripts/install.sh
+sh scripts/install.sh --help
 ```

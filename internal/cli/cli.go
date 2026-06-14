@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -13,18 +16,20 @@ import (
 	apperrors "github.com/Bare-Systems/Bare-Systems-Installer/internal/errors"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/modules"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/output"
+	edgeruntime "github.com/Bare-Systems/Bare-Systems-Installer/internal/runtime"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/version"
 )
 
 const commandName = "bare-systems"
 
 type App struct {
-	name  string
-	clock output.Clock
+	name   string
+	clock  output.Clock
+	runner edgeruntime.Runner
 }
 
 func New() *App {
-	return &App{name: commandName, clock: time.Now}
+	return &App{name: commandName, clock: time.Now, runner: edgeruntime.ExecRunner{}}
 }
 
 type globalOptions struct {
@@ -52,6 +57,8 @@ func (a *App) Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return a.writeHelp(stdout)
 	case "version":
 		return a.writeVersion(stdout, opts)
+	case "install", "start", "stop", "restart", "status", "ps", "logs", "update":
+		return a.runRuntimeCommand(remaining[0], remaining[1:], opts, stdout, stderr)
 	case "validate":
 		return a.runValidate(opts, stdout, stderr)
 	case "config":
@@ -62,6 +69,9 @@ func (a *App) Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "module":
 		return a.handleNested("module", remaining[1:], opts, stdout, stderr, []string{"list", "enable", "disable"})
 	case "service":
+		if len(remaining) > 1 && (remaining[1] == "install" || remaining[1] == "uninstall") {
+			return a.runServiceCommand(remaining[1], remaining[2:], opts, stdout, stderr)
+		}
 		return a.handleNested("service", remaining[1:], opts, stdout, stderr, []string{"install", "uninstall"})
 	default:
 		if slices.Contains(topLevelCommands(), remaining[0]) {
@@ -286,6 +296,175 @@ func (a *App) runConfigRender(opts globalOptions, stdout io.Writer, stderr io.Wr
 	return apperrors.ExitOK
 }
 
+func (a *App) runRuntimeCommand(command string, args []string, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	if command != "logs" && len(args) > 0 {
+		return a.writeUsageError(command+" "+strings.Join(args, " "), opts, stdout, stderr)
+	}
+	if command == "logs" && len(args) > 1 {
+		return a.writeUsageError(command+" "+strings.Join(args, " "), opts, stdout, stderr)
+	}
+
+	ctx, err := a.loadDeploymentContext(opts)
+	if err != nil {
+		return a.writeCommandError(command, apperrors.CodeConfig, err, opts, stdout, stderr)
+	}
+
+	if report, err := edgeruntime.CheckDocker(context.Background(), a.runner); err != nil {
+		return a.writePrereqError(command, report, err, opts, stdout, stderr)
+	}
+
+	manager := edgeruntime.Compose{
+		Runner:      a.runner,
+		ProjectDir:  ctx.deployment.ComposeProjectDirectory(),
+		ProjectName: ctx.deployment.ComposeProjectName(),
+		ComposeFile: filepath.Join(ctx.deployment.ComposeProjectDirectory(), "generated.compose.yml"),
+		Profiles:    ctx.validationResult.Profiles,
+	}
+
+	switch command {
+	case "install":
+		composeFile, err := writeComposeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
+		if result, err := manager.Config(context.Background()); err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		result, err := manager.Pull(context.Background())
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		return a.writeRuntimeSuccess(command, "Deployment artifacts rendered and images pulled", map[string]any{"composeFile": composeFile}, result, opts, stdout, stderr)
+	case "start":
+		composeFile, err := writeComposeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
+		result, err := manager.Up(context.Background())
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		return a.writeRuntimeSuccess(command, "Deployment started", map[string]any{"composeFile": composeFile}, result, opts, stdout, stderr)
+	case "update":
+		composeFile, err := writeComposeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
+		if result, err := manager.Pull(context.Background()); err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		result, err := manager.Up(context.Background())
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		return a.writeRuntimeSuccess(command, "Deployment updated", map[string]any{"composeFile": composeFile}, result, opts, stdout, stderr)
+	case "stop":
+		result, err := manager.Stop(context.Background())
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		return a.writeRuntimeSuccess(command, "Deployment stopped", nil, result, opts, stdout, stderr)
+	case "restart":
+		result, err := manager.Restart(context.Background())
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		return a.writeRuntimeSuccess(command, "Deployment restarted", nil, result, opts, stdout, stderr)
+	case "status":
+		result, err := manager.PS(context.Background(), true)
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		state, err := edgeruntime.ParsePSJSON(result.Stdout)
+		if err != nil {
+			return a.writeCommandError(command, apperrors.CodeRuntime, err, opts, stdout, stderr)
+		}
+		if opts.json {
+			if err := output.WriteEnvelope(stdout, command, apperrors.CodeOK, "Runtime status collected", state, a.clock); err != nil {
+				return apperrors.ExitGeneric
+			}
+			return apperrors.ExitOK
+		}
+		fmt.Fprintf(stdout, "containers: %d\n", state.Summary.Total)
+		for stateName, count := range state.Summary.ByState {
+			fmt.Fprintf(stdout, "%s: %d\n", stateName, count)
+		}
+		return apperrors.ExitOK
+	case "ps":
+		result, err := manager.PS(context.Background(), opts.json)
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		if opts.json {
+			state, err := edgeruntime.ParsePSJSON(result.Stdout)
+			if err != nil {
+				return a.writeCommandError(command, apperrors.CodeRuntime, err, opts, stdout, stderr)
+			}
+			if err := output.WriteEnvelope(stdout, command, apperrors.CodeOK, "Runtime containers listed", state, a.clock); err != nil {
+				return apperrors.ExitGeneric
+			}
+			return apperrors.ExitOK
+		}
+		fmt.Fprint(stdout, result.Stdout)
+		fmt.Fprint(stderr, result.Stderr)
+		return apperrors.ExitOK
+	case "logs":
+		service := ""
+		if len(args) == 1 {
+			service = args[0]
+		}
+		result, err := manager.Logs(context.Background(), service)
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		if opts.json {
+			if err := output.WriteEnvelope(stdout, command, apperrors.CodeOK, "Runtime logs collected", map[string]any{"service": service, "stdout": result.Stdout, "stderr": result.Stderr}, a.clock); err != nil {
+				return apperrors.ExitGeneric
+			}
+			return apperrors.ExitOK
+		}
+		fmt.Fprint(stdout, result.Stdout)
+		fmt.Fprint(stderr, result.Stderr)
+		return apperrors.ExitOK
+	default:
+		return a.writeNotImplemented(command, opts, stdout, stderr)
+	}
+}
+
+func (a *App) runServiceCommand(action string, args []string, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 {
+		return a.writeUsageError("service "+action+" "+strings.Join(args, " "), opts, stdout, stderr)
+	}
+	ctx, err := a.loadDeploymentContext(opts)
+	if err != nil {
+		return a.writeCommandError("service "+action, apperrors.CodeConfig, err, opts, stdout, stderr)
+	}
+
+	options := edgeruntime.ServiceOptions{
+		ProjectDir: ctx.deployment.Spec.Storage.Root,
+	}
+	var result edgeruntime.ServiceResult
+	switch action {
+	case "install":
+		result, err = edgeruntime.InstallSystemdService(context.Background(), a.runner, options)
+	case "uninstall":
+		result, err = edgeruntime.UninstallSystemdService(context.Background(), a.runner, options)
+	}
+	if err != nil {
+		return a.writeCommandError("service "+action, apperrors.CodePrereq, err, opts, stdout, stderr)
+	}
+	if opts.json {
+		if err := output.WriteEnvelope(stdout, "service "+action, apperrors.CodeOK, result.Message, result, a.clock); err != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitOK
+	}
+	if !opts.quiet {
+		fmt.Fprintf(stdout, "%s: %s\n", result.Message, result.UnitPath)
+	}
+	return apperrors.ExitOK
+}
+
 func (a *App) handleNested(parent string, args []string, opts globalOptions, stdout io.Writer, stderr io.Writer, subcommands []string) int {
 	if len(args) == 0 {
 		return a.writeUsageError(parent, opts, stdout, stderr)
@@ -339,6 +518,70 @@ func (a *App) writeCommandError(command string, code apperrors.Code, err error, 
 
 	fmt.Fprintf(stderr, "%s: %s\n", a.name, message)
 	return apperrors.ExitCodeFor(code)
+}
+
+func (a *App) writePrereqError(command string, report edgeruntime.PrereqReport, err error, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	if opts.json {
+		if writeErr := output.WriteEnvelope(stdout, command, apperrors.CodePrereq, err.Error(), report, a.clock); writeErr != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitPrereq
+	}
+	fmt.Fprintf(stderr, "%s: %s\n", a.name, err.Error())
+	return apperrors.ExitPrereq
+}
+
+func (a *App) writeRuntimeError(command string, result edgeruntime.Result, err error, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	data := map[string]any{
+		"stdout": result.Stdout,
+		"stderr": result.Stderr,
+	}
+	if opts.json {
+		if writeErr := output.WriteEnvelope(stdout, command, apperrors.CodeRuntime, err.Error(), data, a.clock); writeErr != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitRuntime
+	}
+	fmt.Fprintf(stderr, "%s: %s\n", a.name, err.Error())
+	return apperrors.ExitRuntime
+}
+
+func (a *App) writeRuntimeSuccess(command string, message string, data map[string]any, result edgeruntime.Result, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	if data == nil {
+		data = map[string]any{}
+	}
+	if result.Stdout != "" {
+		data["stdout"] = result.Stdout
+	}
+	if result.Stderr != "" {
+		data["stderr"] = result.Stderr
+	}
+	if opts.json {
+		if err := output.WriteEnvelope(stdout, command, apperrors.CodeOK, message, data, a.clock); err != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitOK
+	}
+	if !opts.quiet {
+		fmt.Fprintln(stdout, message)
+	}
+	if opts.verbose {
+		fmt.Fprint(stdout, result.Stdout)
+		fmt.Fprint(stderr, result.Stderr)
+	}
+	return apperrors.ExitOK
+}
+
+func writeComposeArtifact(ctx deploymentContext) (string, error) {
+	dir := ctx.deployment.ComposeProjectDirectory()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create Compose project directory %s: %w", dir, err)
+	}
+	path := filepath.Join(dir, "generated.compose.yml")
+	if err := os.WriteFile(path, ctx.composeYAML, 0o644); err != nil {
+		return "", fmt.Errorf("write generated Compose file %s: %w", path, err)
+	}
+	return path, nil
 }
 
 func topLevelCommands() []string {

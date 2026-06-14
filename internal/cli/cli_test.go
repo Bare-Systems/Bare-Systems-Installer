@@ -268,7 +268,7 @@ func TestStatusJSONExposesRuntimeState(t *testing.T) {
 		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
 	}
 	out := stdout.String()
-	for _, want := range []string{`"command": "status"`, `"total": 1`, `"service": "tardigrade"`} {
+	for _, want := range []string{`"command": "status"`, `"total": 3`, `"service": "tardigrade"`} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status JSON missing %q:\n%s", want, out)
 		}
@@ -292,6 +292,72 @@ func TestLogsSupportsOptionalService(t *testing.T) {
 	}
 	if !runner.sawArgs("logs --tail 200 tardigrade") {
 		t.Fatalf("logs command did not include service: %#v", runner.commands)
+	}
+}
+
+func TestDoctorReportsChecks(t *testing.T) {
+	runner := newCLIFakeRunner()
+	app := New()
+	app.runner = runner
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := app.Run([]string{"--project-dir", t.TempDir(), "doctor"}, &stdout, &stderr)
+
+	if code != apperrors.ExitOK {
+		t.Fatalf("exit code = %d, want %d; stderr=%q stdout=%q", code, apperrors.ExitOK, stderr.String(), stdout.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"PASS config-valid", "PASS docker-cli", "manifest-health:tardigrade"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDoctorJSONReportsFailures(t *testing.T) {
+	runner := newCLIFakeRunner()
+	runner.missingDocker = true
+	app := New()
+	app.runner = runner
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := app.Run([]string{"--project-dir", t.TempDir(), "--json", "doctor"}, &stdout, &stderr)
+
+	if code != apperrors.ExitHealth {
+		t.Fatalf("exit code = %d, want %d", code, apperrors.ExitHealth)
+	}
+	out := stdout.String()
+	for _, want := range []string{`"command": "doctor"`, `"code": "ERR_HEALTH"`, `"name": "docker-cli"`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor JSON missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestBundleCommandCreatesArchive(t *testing.T) {
+	runner := newCLIFakeRunner()
+	app := New()
+	app.runner = runner
+	app.clock = func() time.Time {
+		return time.Date(2026, 6, 13, 12, 34, 56, 0, time.UTC)
+	}
+	projectDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := app.Run([]string{"--project-dir", projectDir, "--json", "bundle"}, &stdout, &stderr)
+
+	if code != apperrors.ExitOK {
+		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"command": "bundle"`) {
+		t.Fatalf("bundle JSON missing command: %s", stdout.String())
+	}
+	expected := filepath.Join(projectDir, "bundles", "diagnostics-20260613-123456.tar.gz")
+	if _, err := os.Stat(expected); err != nil {
+		t.Fatalf("bundle not created at %s: %v", expected, err)
 	}
 }
 
@@ -352,7 +418,7 @@ func (r *cliFakeRunner) Run(_ context.Context, command edgeruntime.Command) (edg
 		return edgeruntime.Result{Stdout: "Docker Compose version v2\n"}, nil
 	}
 	if strings.Contains(args, "ps --format json") {
-		return edgeruntime.Result{Stdout: `[{"ID":"abc","Name":"edge-tardigrade-1","Service":"tardigrade","State":"running","Health":"healthy"}]`}, nil
+		return edgeruntime.Result{Stdout: `[{"ID":"abc","Name":"edge-tardigrade-1","Service":"tardigrade","State":"running","Health":"healthy"},{"Service":"bearclaw-web","State":"running","Health":"healthy"},{"Service":"bearclaw-agent","State":"running","Health":"healthy"}]`}, nil
 	}
 	if strings.Contains(args, "logs --tail 200") {
 		return edgeruntime.Result{Stdout: "log line\n"}, nil

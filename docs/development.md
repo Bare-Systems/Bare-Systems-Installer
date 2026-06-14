@@ -21,6 +21,8 @@ go run ./cmd/bare-systems --json version
 go run ./cmd/bare-systems validate
 go run ./cmd/bare-systems config render
 go run ./cmd/bare-systems --json status
+go run ./cmd/bare-systems doctor
+go run ./cmd/bare-systems --project-dir ./tmp-edge bundle
 ```
 
 ## Build

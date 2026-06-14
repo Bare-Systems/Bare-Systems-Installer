@@ -60,6 +60,7 @@ Implemented commands currently include `help`, `version`, `validate`, `config re
 
 See [docs/config/edge-yml.md](docs/config/edge-yml.md) and [docs/modules.md](docs/modules.md) for the deployment contract.
 See [docs/runtime.md](docs/runtime.md) for Docker Compose and systemd behavior.
+See [docs/support-runbook.md](docs/support-runbook.md) for doctor and diagnostics bundle usage.
 
 ## JSON output
 

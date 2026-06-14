@@ -47,6 +47,8 @@ bare-systems status
 bare-systems ps
 bare-systems logs
 bare-systems logs <service>
+bare-systems doctor
+bare-systems bundle
 ```
 
 Mappings:
@@ -61,6 +63,8 @@ Mappings:
 | `status` | `docker compose ps --format json` summarized for humans or JSON |
 | `ps` | `docker compose ps`, or structured state with `--json` |
 | `logs [service]` | `docker compose logs --tail 200 [service]` |
+
+`doctor` and `bundle` use the same runtime boundaries but are support-oriented. `doctor` summarizes host, config, Compose, runtime, product health, and Portal reporting status. `bundle` writes a redacted tar.gz support artifact with rendered config, runtime state, logs, and doctor output.
 
 ## systemd
 

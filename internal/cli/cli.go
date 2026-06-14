@@ -13,7 +13,9 @@ import (
 
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/compose"
 	deploymentconfig "github.com/Bare-Systems/Bare-Systems-Installer/internal/config"
+	"github.com/Bare-Systems/Bare-Systems-Installer/internal/diagnostics"
 	apperrors "github.com/Bare-Systems/Bare-Systems-Installer/internal/errors"
+	"github.com/Bare-Systems/Bare-Systems-Installer/internal/health"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/modules"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/output"
 	edgeruntime "github.com/Bare-Systems/Bare-Systems-Installer/internal/runtime"
@@ -59,6 +61,10 @@ func (a *App) Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return a.writeVersion(stdout, opts)
 	case "install", "start", "stop", "restart", "status", "ps", "logs", "update":
 		return a.runRuntimeCommand(remaining[0], remaining[1:], opts, stdout, stderr)
+	case "doctor":
+		return a.runDoctor(opts, stdout, stderr)
+	case "bundle":
+		return a.runBundle(opts, stdout, stderr)
 	case "validate":
 		return a.runValidate(opts, stdout, stderr)
 	case "config":
@@ -463,6 +469,107 @@ func (a *App) runServiceCommand(action string, args []string, opts globalOptions
 		fmt.Fprintf(stdout, "%s: %s\n", result.Message, result.UnitPath)
 	}
 	return apperrors.ExitOK
+}
+
+func (a *App) runDoctor(opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	_, report, _ := a.buildDoctorReport(opts)
+	code := apperrors.CodeOK
+	exitCode := apperrors.ExitOK
+	if report.HasFailures() {
+		code = apperrors.CodeHealth
+		exitCode = apperrors.ExitHealth
+	}
+	if opts.json {
+		if err := output.WriteEnvelope(stdout, "doctor", code, report.Summary.Message, report, a.clock); err != nil {
+			return apperrors.ExitGeneric
+		}
+		return exitCode
+	}
+
+	for _, check := range report.Checks {
+		fmt.Fprintf(stdout, "%s %s: %s\n", strings.ToUpper(string(check.Status)), check.Name, check.Message)
+		if check.Remediation != "" {
+			fmt.Fprintf(stdout, "  remediation: %s\n", check.Remediation)
+		}
+	}
+	if report.Summary.Message != "" {
+		fmt.Fprintf(stdout, "\n%s\n", report.Summary.Message)
+	}
+	return exitCode
+}
+
+func (a *App) runBundle(opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	ctx, report, ctxErr := a.buildDoctorReport(opts)
+	if ctxErr != nil {
+		ctx = fallbackDeploymentContext(opts, ctxErr)
+	}
+
+	result, err := diagnostics.Create(context.Background(), diagnostics.Options{
+		Deployment:       ctx.deployment,
+		ConfigSource:     ctx.configSource,
+		EnvSource:        ctx.envSource,
+		Env:              ctx.env,
+		ComposeYAML:      ctx.composeYAML,
+		ValidationResult: ctx.validationResult,
+		Registry:         modules.BuiltInRegistry(),
+		Runner:           a.runner,
+		HealthReport:     report,
+		Now:              a.clock().UTC(),
+	})
+	if err != nil {
+		return a.writeCommandError("bundle", apperrors.CodeDiagnostics, err, opts, stdout, stderr)
+	}
+	if opts.json {
+		if err := output.WriteEnvelope(stdout, "bundle", apperrors.CodeOK, "Diagnostics bundle created", result, a.clock); err != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitOK
+	}
+	if !opts.quiet {
+		fmt.Fprintf(stdout, "Diagnostics bundle: %s\n", result.Path)
+		fmt.Fprintf(stdout, "Size: %d bytes\n", result.SizeBytes)
+	}
+	return apperrors.ExitOK
+}
+
+func (a *App) buildDoctorReport(opts globalOptions) (deploymentContext, health.Report, error) {
+	ctx, err := a.loadDeploymentContext(opts)
+	if err != nil {
+		return deploymentContext{}, health.ConfigFailure(err), err
+	}
+	report := health.Evaluate(context.Background(), health.Options{
+		Deployment:       ctx.deployment,
+		ValidationResult: ctx.validationResult,
+		ComposeYAML:      ctx.composeYAML,
+		Registry:         modules.BuiltInRegistry(),
+		Runner:           a.runner,
+		ComposeFile:      filepath.Join(ctx.deployment.ComposeProjectDirectory(), "generated.compose.yml"),
+	})
+	return ctx, report, nil
+}
+
+func fallbackDeploymentContext(opts globalOptions, err error) deploymentContext {
+	deployment := deploymentconfig.DefaultDeployment()
+	if opts.projectDir != "" {
+		deployment.Spec.Storage.Root = opts.projectDir
+		deployment.Spec.Runtime.ComposeProjectDirectory = filepath.Join(opts.projectDir, "compose")
+	}
+	return deploymentContext{
+		deployment:       deployment,
+		configSource:     valueOr(opts.config, "unavailable"),
+		envSource:        valueOr(opts.envFile, "unavailable"),
+		env:              deploymentconfig.DerivedEnv(deployment),
+		validationResult: deploymentconfig.ValidationResult{EnabledModules: []string{"core"}, Profiles: []string{"core"}},
+		composeYAML:      []byte("# Compose render unavailable: " + diagnostics.RedactString(err.Error()) + "\n"),
+		warnings:         []string{err.Error()},
+	}
+}
+
+func valueOr(value string, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
 }
 
 func (a *App) handleNested(parent string, args []string, opts globalOptions, stdout io.Writer, stderr io.Writer, subcommands []string) int {

@@ -2,7 +2,7 @@
 
 Bare Systems Installer is the customer-facing CLI for Bare Systems edge deployments. The public command is `bare-systems`.
 
-The CLI is responsible for installation workflows, local configuration, lifecycle orchestration, support diagnostics, and future Portal enrollment/reporting. It does not replace Docker. Runtime services are expected to run through Docker Compose on the customer host.
+The CLI is responsible for installation workflows, local configuration, lifecycle orchestration, support diagnostics, and Portal enrollment/reporting. It does not replace Docker. Runtime services are expected to run through Docker Compose on the customer host.
 
 ## Current status
 
@@ -57,7 +57,7 @@ bare-systems service install
 bare-systems service uninstall
 ```
 
-Implemented commands currently include `help`, `version`, `validate`, `config render`, core Docker Compose lifecycle commands, runtime status/ps/logs, systemd service install/uninstall helpers, Portal enrollment, and Portal reporting. Other recognized commands return a clear not-implemented message until their dedicated tickets add real behavior.
+Implemented commands currently include `help`, `version`, `init`, `validate`, `config render`, core Docker Compose lifecycle commands, runtime status/ps/logs, systemd service install/uninstall helpers, Portal enrollment, and Portal reporting. Other recognized commands return a clear not-implemented message until their dedicated tickets add real behavior.
 
 `validate` and `config render` implement the first deployment-model pass. They validate the built-in or configured `edge.yml` schema, built-in module manifests, non-secret `.env` values, and generated Compose YAML.
 

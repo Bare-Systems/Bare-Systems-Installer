@@ -179,6 +179,96 @@ func TestValidateCommand(t *testing.T) {
 	}
 }
 
+func TestInitCommandCreatesProjectDefaults(t *testing.T) {
+	projectDir := filepath.Join(t.TempDir(), "edge")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := New().Run([]string{"--project-dir", projectDir, "init"}, &stdout, &stderr)
+
+	if code != apperrors.ExitOK {
+		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	for _, path := range []string{
+		projectDir,
+		filepath.Join(projectDir, "compose"),
+		filepath.Join(projectDir, "state"),
+		filepath.Join(projectDir, "bundles"),
+		filepath.Join(projectDir, "manifests"),
+		filepath.Join(projectDir, "backups"),
+		filepath.Join(projectDir, "edge.yml"),
+		filepath.Join(projectDir, ".env"),
+		filepath.Join(projectDir, "compose", "generated.compose.yml"),
+		filepath.Join(projectDir, "manifests", "README.md"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected init path %s: %v", path, err)
+		}
+	}
+	assertFileMode(t, filepath.Join(projectDir, "state"), 0o700)
+
+	stdout.Reset()
+	stderr.Reset()
+	code = New().Run([]string{"--project-dir", projectDir, "--json", "validate"}, &stdout, &stderr)
+	if code != apperrors.ExitOK {
+		t.Fatalf("validate exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	for _, want := range []string{`"command": "validate"`, filepath.Join(projectDir, "edge.yml"), `"enabledModules": [`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("validate output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestInitCommandDoesNotOverwriteWithoutForce(t *testing.T) {
+	projectDir := t.TempDir()
+	app := New()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := app.Run([]string{"--project-dir", projectDir, "init"}, &stdout, &stderr)
+	if code != apperrors.ExitOK {
+		t.Fatalf("init exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	configPath := filepath.Join(projectDir, "edge.yml")
+	original, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	custom := append(append([]byte{}, original...), []byte("\n# homelab custom note\n")...)
+	if err := os.WriteFile(configPath, custom, 0o600); err != nil {
+		t.Fatalf("write custom config: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run([]string{"--project-dir", projectDir, "init"}, &stdout, &stderr)
+	if code != apperrors.ExitOK {
+		t.Fatalf("second init exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config after idempotent init: %v", err)
+	}
+	if !strings.Contains(string(data), "homelab custom note") {
+		t.Fatalf("init overwrote existing config without --force:\n%s", string(data))
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run([]string{"--project-dir", projectDir, "init", "--force"}, &stdout, &stderr)
+	if code != apperrors.ExitOK {
+		t.Fatalf("force init exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	data, err = os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config after force init: %v", err)
+	}
+	if strings.Contains(string(data), "homelab custom note") {
+		t.Fatalf("init --force did not regenerate config:\n%s", string(data))
+	}
+}
+
 func TestConfigRenderCommand(t *testing.T) {
 	configPath := writeDefaultDeployment(t)
 	var stdout bytes.Buffer
@@ -194,6 +284,41 @@ func TestConfigRenderCommand(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("rendered output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestConfigRenderWriteCommand(t *testing.T) {
+	projectDir := t.TempDir()
+	app := New()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := app.Run([]string{"--project-dir", projectDir, "init"}, &stdout, &stderr)
+	if code != apperrors.ExitOK {
+		t.Fatalf("init exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	composeFile := filepath.Join(projectDir, "compose", "generated.compose.yml")
+	if err := os.Remove(composeFile); err != nil {
+		t.Fatalf("remove compose file: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = app.Run([]string{"--project-dir", projectDir, "config", "render", "--write"}, &stdout, &stderr)
+	if code != apperrors.ExitOK {
+		t.Fatalf("config render --write exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	data, err := os.ReadFile(composeFile)
+	if err != nil {
+		t.Fatalf("read compose file: %v", err)
+	}
+	for _, want := range []string{"services:", "tardigrade:", "bearclaw-web:"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("compose file missing %q:\n%s", want, string(data))
+		}
+	}
+	if !strings.Contains(stdout.String(), composeFile) {
+		t.Fatalf("stdout missing compose file path: %q", stdout.String())
 	}
 }
 

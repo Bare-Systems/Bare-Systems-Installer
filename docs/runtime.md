@@ -38,6 +38,9 @@ docker compose \
 Implemented runtime commands:
 
 ```sh
+bare-systems --project-dir ./tmp-edge init
+bare-systems --project-dir ./tmp-edge validate
+bare-systems --project-dir ./tmp-edge config render --write
 bare-systems install
 bare-systems start
 bare-systems stop

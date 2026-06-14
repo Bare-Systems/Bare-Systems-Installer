@@ -70,6 +70,8 @@ func (a *App) Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return a.runDoctor(opts, stdout, stderr)
 	case "bundle":
 		return a.runBundle(opts, stdout, stderr)
+	case "init":
+		return a.runInit(remaining[1:], opts, stdout, stderr)
 	case "enroll":
 		return a.runEnroll(remaining[1:], opts, stdout, stderr)
 	case "report":
@@ -78,7 +80,7 @@ func (a *App) Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return a.runValidate(opts, stdout, stderr)
 	case "config":
 		if len(remaining) > 1 && remaining[1] == "render" {
-			return a.runConfigRender(opts, stdout, stderr)
+			return a.runConfigRender(remaining[2:], opts, stdout, stderr)
 		}
 		return a.handleNested("config", remaining[1:], opts, stdout, stderr, []string{"render", "diff"})
 	case "module":
@@ -144,7 +146,7 @@ Usage:
 Commands:
   help                     Show this help text.
   version                  Print CLI version and build metadata.
-  init                     Initialize local deployment files.
+  init [--force]           Initialize local deployment files.
   validate                 Validate config and rendered deployment inputs.
   install                  Prepare and install the deployment.
   start                    Start the Compose deployment.
@@ -159,7 +161,7 @@ Commands:
   bundle                   Create a redacted diagnostics bundle.
   enroll                   Enroll this device with the Portal.
   report                   Send deployment status to the Portal.
-  config render            Render canonical Compose config.
+  config render [--write]  Render canonical Compose config.
   config diff              Compare desired and active config.
   module list              List available modules.
   module enable <name>     Enable a module.
@@ -216,18 +218,19 @@ type deploymentContext struct {
 }
 
 func (a *App) loadDeploymentContext(opts globalOptions) (deploymentContext, error) {
-	configLoad, err := deploymentconfig.LoadDeployment(opts.config, opts.config == "")
+	configPath, allowDefaultConfig := resolveConfigPath(opts)
+	configLoad, err := deploymentconfig.LoadDeployment(configPath, allowDefaultConfig)
 	if err != nil {
 		return deploymentContext{}, err
 	}
 
 	deployment := configLoad.Deployment
 	if opts.projectDir != "" {
-		deployment.Spec.Runtime.ComposeProjectDirectory = opts.projectDir + "/compose"
-		deployment.Spec.Storage.Root = opts.projectDir
+		deployment = deploymentForProjectDir(deployment, opts.projectDir)
 	}
 
-	envLoad, err := deploymentconfig.LoadEnv(opts.envFile, opts.envFile != "")
+	envPath, explicitEnv := resolveEnvPath(opts)
+	envLoad, err := deploymentconfig.LoadEnv(envPath, explicitEnv)
 	if err != nil {
 		return deploymentContext{}, err
 	}
@@ -258,6 +261,33 @@ func (a *App) loadDeploymentContext(opts globalOptions) (deploymentContext, erro
 		composeYAML:      composeYAML,
 		warnings:         warnings,
 	}, nil
+}
+
+func resolveConfigPath(opts globalOptions) (string, bool) {
+	if opts.config != "" {
+		return opts.config, false
+	}
+	if opts.projectDir != "" {
+		return filepath.Join(opts.projectDir, "edge.yml"), true
+	}
+	return "", true
+}
+
+func resolveEnvPath(opts globalOptions) (string, bool) {
+	if opts.envFile != "" {
+		return opts.envFile, true
+	}
+	if opts.projectDir != "" {
+		return filepath.Join(opts.projectDir, ".env"), false
+	}
+	return "", false
+}
+
+func deploymentForProjectDir(deployment deploymentconfig.Deployment, projectDir string) deploymentconfig.Deployment {
+	deployment.Spec.Runtime.ComposeProjectDirectory = filepath.Join(projectDir, "compose")
+	deployment.Spec.Storage.Root = projectDir
+	deployment.Spec.Storage.Backups = filepath.Join(projectDir, "backups")
+	return deployment
 }
 
 func (a *App) runValidate(opts globalOptions, stdout io.Writer, stderr io.Writer) int {
@@ -291,10 +321,142 @@ func (a *App) runValidate(opts globalOptions, stdout io.Writer, stderr io.Writer
 	return apperrors.ExitOK
 }
 
-func (a *App) runConfigRender(opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+type initOptions struct {
+	force bool
+}
+
+func (a *App) runInit(args []string, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	initOpts, ok := a.parseInitFlags(args, stderr)
+	if !ok {
+		return apperrors.ExitUsage
+	}
+
+	projectDir := valueOr(opts.projectDir, deploymentconfig.DefaultProjectDir)
+	configPath := opts.config
+	if configPath == "" {
+		if opts.projectDir != "" {
+			configPath = filepath.Join(projectDir, "edge.yml")
+		} else {
+			configPath = deploymentconfig.DefaultConfigPath
+		}
+	}
+	envPath := opts.envFile
+	if envPath == "" {
+		if opts.projectDir != "" {
+			envPath = filepath.Join(projectDir, ".env")
+		} else {
+			envPath = deploymentconfig.DefaultEnvPath
+		}
+	}
+
+	deployment := deploymentconfig.DefaultDeployment()
+	if opts.projectDir != "" {
+		deployment = deploymentForProjectDir(deployment, projectDir)
+	}
+	registry := modules.BuiltInRegistry()
+	env := deploymentconfig.DerivedEnv(deployment)
+	composeYAML, err := compose.Render(deployment, registry, env)
+	if err != nil {
+		return a.writeCommandError("init", apperrors.CodeConfig, err, opts, stdout, stderr)
+	}
+	if err := compose.ValidateRendered(composeYAML); err != nil {
+		return a.writeCommandError("init", apperrors.CodeConfig, err, opts, stdout, stderr)
+	}
+
+	paths := initPaths{
+		ProjectDir: projectDir,
+		ConfigDir:  filepath.Dir(configPath),
+		ConfigFile: configPath,
+		EnvFile:    envPath,
+		ComposeDir: deployment.ComposeProjectDirectory(),
+		ComposeFile: filepath.Join(
+			deployment.ComposeProjectDirectory(),
+			"generated.compose.yml",
+		),
+		StateDir:    filepath.Join(projectDir, "state"),
+		BundleDir:   filepath.Join(projectDir, "bundles"),
+		ManifestDir: filepath.Join(projectDir, "manifests"),
+		BackupsDir:  filepath.Join(projectDir, "backups"),
+	}
+
+	result, err := initializeProject(paths, deployment, env, composeYAML, initOpts.force)
+	if err != nil {
+		return a.writeCommandError("init", apperrors.CodePermissions, err, opts, stdout, stderr)
+	}
+
+	if opts.json {
+		if err := output.WriteEnvelope(stdout, "init", apperrors.CodeOK, "Deployment project initialized", result, a.clock); err != nil {
+			return apperrors.ExitGeneric
+		}
+		return apperrors.ExitOK
+	}
+	if !opts.quiet {
+		fmt.Fprintf(stdout, "Deployment project initialized: %s\n", projectDir)
+		fmt.Fprintf(stdout, "config: %s\n", configPath)
+		fmt.Fprintf(stdout, "env: %s\n", envPath)
+		fmt.Fprintf(stdout, "compose: %s\n", paths.ComposeFile)
+		if len(result.Skipped) > 0 {
+			fmt.Fprintf(stdout, "skipped existing files: %s\n", strings.Join(result.Skipped, ", "))
+		}
+	}
+	return apperrors.ExitOK
+}
+
+func (a *App) parseInitFlags(args []string, stderr io.Writer) (initOptions, bool) {
+	var initOpts initOptions
+	flags := flag.NewFlagSet("init", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.BoolVar(&initOpts.force, "force", false, "regenerate default files")
+	flags.Usage = func() {
+		fmt.Fprintf(stderr, "Usage:\n  %s [global flags] init [--force]\n", a.name)
+	}
+	if err := flags.Parse(args); err != nil {
+		return initOpts, false
+	}
+	if flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "%s: unexpected init argument %q\n", a.name, flags.Arg(0))
+		flags.Usage()
+		return initOpts, false
+	}
+	return initOpts, true
+}
+
+type configRenderOptions struct {
+	write bool
+}
+
+func (a *App) runConfigRender(args []string, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
+	renderOpts, ok := a.parseConfigRenderFlags(args, stderr)
+	if !ok {
+		return apperrors.ExitUsage
+	}
 	ctx, err := a.loadDeploymentContext(opts)
 	if err != nil {
 		return a.writeCommandError("config render", apperrors.CodeConfig, err, opts, stdout, stderr)
+	}
+
+	if renderOpts.write {
+		composeFile, err := writeComposeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError("config render", apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
+		data := map[string]any{
+			"configSource": ctx.configSource,
+			"composeFile":  composeFile,
+		}
+		if opts.json {
+			if err := output.WriteEnvelopeWithWarnings(stdout, "config render", apperrors.CodeOK, "Rendered Compose config written", data, ctx.warnings, a.clock); err != nil {
+				return apperrors.ExitGeneric
+			}
+			return apperrors.ExitOK
+		}
+		if !opts.quiet {
+			fmt.Fprintf(stdout, "Rendered Compose config: %s\n", composeFile)
+		}
+		for _, warning := range ctx.warnings {
+			fmt.Fprintf(stderr, "warning: %s\n", warning)
+		}
+		return apperrors.ExitOK
 	}
 
 	if opts.json {
@@ -315,6 +477,25 @@ func (a *App) runConfigRender(opts globalOptions, stdout io.Writer, stderr io.Wr
 		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}
 	return apperrors.ExitOK
+}
+
+func (a *App) parseConfigRenderFlags(args []string, stderr io.Writer) (configRenderOptions, bool) {
+	var renderOpts configRenderOptions
+	flags := flag.NewFlagSet("config render", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.BoolVar(&renderOpts.write, "write", false, "write generated Compose YAML to the project compose directory")
+	flags.Usage = func() {
+		fmt.Fprintf(stderr, "Usage:\n  %s [global flags] config render [--write]\n", a.name)
+	}
+	if err := flags.Parse(args); err != nil {
+		return renderOpts, false
+	}
+	if flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "%s: unexpected config render argument %q\n", a.name, flags.Arg(0))
+		flags.Usage()
+		return renderOpts, false
+	}
+	return renderOpts, true
 }
 
 func (a *App) runEnroll(args []string, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
@@ -894,6 +1075,127 @@ func (a *App) writeRuntimeSuccess(command string, message string, data map[strin
 		fmt.Fprint(stderr, result.Stderr)
 	}
 	return apperrors.ExitOK
+}
+
+type initPaths struct {
+	ProjectDir  string `json:"projectDir"`
+	ConfigDir   string `json:"configDir"`
+	ConfigFile  string `json:"configFile"`
+	EnvFile     string `json:"envFile"`
+	ComposeDir  string `json:"composeDir"`
+	ComposeFile string `json:"composeFile"`
+	StateDir    string `json:"stateDir"`
+	BundleDir   string `json:"bundleDir"`
+	ManifestDir string `json:"manifestDir"`
+	BackupsDir  string `json:"backupsDir"`
+}
+
+type initResult struct {
+	Paths       initPaths `json:"paths"`
+	CreatedDirs []string  `json:"createdDirs"`
+	Written     []string  `json:"written"`
+	Skipped     []string  `json:"skipped"`
+	Forced      bool      `json:"forced"`
+}
+
+func initializeProject(paths initPaths, deployment deploymentconfig.Deployment, env deploymentconfig.Environment, composeYAML []byte, force bool) (initResult, error) {
+	result := initResult{Paths: paths, Forced: force}
+	for _, dir := range []struct {
+		path string
+		mode os.FileMode
+	}{
+		{paths.ProjectDir, 0o755},
+		{paths.ConfigDir, 0o755},
+		{paths.ComposeDir, 0o755},
+		{paths.StateDir, 0o700},
+		{paths.BundleDir, 0o755},
+		{paths.ManifestDir, 0o755},
+		{paths.BackupsDir, 0o755},
+	} {
+		created, err := ensureDir(dir.path, dir.mode)
+		if err != nil {
+			return initResult{}, err
+		}
+		if created {
+			result.CreatedDirs = append(result.CreatedDirs, dir.path)
+		}
+	}
+
+	configYAML, err := deploymentconfig.DeploymentYAML(deployment)
+	if err != nil {
+		return initResult{}, fmt.Errorf("marshal default deployment: %w", err)
+	}
+	for _, file := range []struct {
+		path string
+		data []byte
+	}{
+		{paths.ConfigFile, configYAML},
+		{paths.EnvFile, defaultEnvFile(env)},
+		{paths.ComposeFile, composeYAML},
+		{filepath.Join(paths.ManifestDir, "README.md"), []byte(defaultManifestReadme())},
+	} {
+		written, err := writeDefaultFile(file.path, file.data, force)
+		if err != nil {
+			return initResult{}, err
+		}
+		if written {
+			result.Written = append(result.Written, file.path)
+		} else {
+			result.Skipped = append(result.Skipped, file.path)
+		}
+	}
+	return result, nil
+}
+
+func ensureDir(path string, mode os.FileMode) (bool, error) {
+	if path == "" || path == "." {
+		return false, nil
+	}
+	if info, err := os.Stat(path); err == nil {
+		if !info.IsDir() {
+			return false, fmt.Errorf("%s exists and is not a directory", path)
+		}
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("stat directory %s: %w", path, err)
+	}
+	if err := os.MkdirAll(path, mode); err != nil {
+		return false, fmt.Errorf("create directory %s: %w", path, err)
+	}
+	return true, nil
+}
+
+func writeDefaultFile(path string, data []byte, force bool) (bool, error) {
+	if _, err := os.Stat(path); err == nil && !force {
+		return false, nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("stat file %s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, fmt.Errorf("create parent directory for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return false, fmt.Errorf("write default file %s: %w", path, err)
+	}
+	return true, nil
+}
+
+func defaultEnvFile(env deploymentconfig.Environment) []byte {
+	var builder strings.Builder
+	builder.WriteString("# Non-secret Bare Systems Compose interpolation values.\n")
+	builder.WriteString("# Do not put tokens, passwords, API keys, private keys, or TLS keys here.\n\n")
+	for _, key := range env.Keys() {
+		fmt.Fprintf(&builder, "%s=%s\n", key, env[key])
+	}
+	return []byte(builder.String())
+}
+
+func defaultManifestReadme() string {
+	return `# Module Manifests
+
+Bare Systems currently ships built-in manifests for core, koala, polar, kodiak, and ursa.
+This directory is reserved for future operator-supplied manifest overrides.
+`
 }
 
 func writeComposeArtifact(ctx deploymentContext) (string, error) {

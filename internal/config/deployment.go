@@ -132,7 +132,11 @@ func DecodeDeployment(data []byte) (Deployment, error) {
 }
 
 func DefaultDeploymentYAML() ([]byte, error) {
-	data, err := yaml.Marshal(DefaultDeployment())
+	return DeploymentYAML(DefaultDeployment())
+}
+
+func DeploymentYAML(deployment Deployment) ([]byte, error) {
+	data, err := yaml.Marshal(deployment)
 	if err != nil {
 		return nil, err
 	}

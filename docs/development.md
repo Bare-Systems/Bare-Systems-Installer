@@ -18,8 +18,10 @@ go test ./...
 go run ./cmd/bare-systems --help
 go run ./cmd/bare-systems version
 go run ./cmd/bare-systems --json version
-go run ./cmd/bare-systems validate
-go run ./cmd/bare-systems config render
+go run ./cmd/bare-systems --project-dir ./tmp-edge init
+go run ./cmd/bare-systems --project-dir ./tmp-edge validate
+go run ./cmd/bare-systems --project-dir ./tmp-edge config render
+go run ./cmd/bare-systems --project-dir ./tmp-edge config render --write
 go run ./cmd/bare-systems --json status
 go run ./cmd/bare-systems doctor
 go run ./cmd/bare-systems --project-dir ./tmp-edge bundle

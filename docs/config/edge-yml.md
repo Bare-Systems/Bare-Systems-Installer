@@ -83,14 +83,21 @@ Secrets are modeled as files under `/etc/bare-systems/secrets`. Module manifests
 
 ## Commands
 
+Initialize a local editable project:
+
+```sh
+bare-systems --project-dir ./tmp-edge init
+```
+
 Validate the deployment model:
 
 ```sh
-bare-systems --config /etc/bare-systems/edge.yml validate
+bare-systems --project-dir ./tmp-edge validate
 ```
 
 Render canonical Compose YAML:
 
 ```sh
-bare-systems --config /etc/bare-systems/edge.yml config render
+bare-systems --project-dir ./tmp-edge config render
+bare-systems --project-dir ./tmp-edge config render --write
 ```

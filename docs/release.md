@@ -29,7 +29,9 @@ Archives include the `bare-systems` binary plus the README and release/runtime d
 
 ## Install Script
 
-The install script detects OS and architecture, downloads the matching archive and `checksums.txt`, verifies the SHA-256 checksum, and installs the binary.
+The install script detects OS and architecture, downloads the matching Bare Systems archive and `checksums.txt`, verifies the SHA-256 checksum, and installs the binary.
+
+It also installs the Tardigrade host CLI from the `Bare-Systems/Tardigrade` GitHub release before deployment runtime commands are used. The current bootstrap path is intentionally hard-coded to the Linux x86_64 Tardigrade archive, `tardigrade-linux-x86_64.tar.gz`, and installs both `tardigrade` and the `tardi` alias into the same install directory.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Bare-Systems/Bare-Systems-Installer/main/scripts/install.sh | sh
@@ -48,6 +50,22 @@ Install to a non-default directory:
 BARE_SYSTEMS_INSTALL_DIR="$HOME/.local/bin" \
   sh scripts/install.sh
 ```
+
+Skip the Tardigrade install when only refreshing the Bare Systems CLI:
+
+```sh
+BARE_SYSTEMS_SKIP_TARDIGRADE=1 sh scripts/install.sh
+```
+
+Install a specific Tardigrade release or override the temporary hard-coded asset:
+
+```sh
+BARE_SYSTEMS_TARDIGRADE_VERSION=v0.1.0 \
+BARE_SYSTEMS_TARDIGRADE_ASSET=tardigrade-linux-x86_64.tar.gz \
+  sh scripts/install.sh
+```
+
+The `.deb` and `.rpm` packages currently install only `bare-systems`; use the install script on hosts that need the installer to provision Tardigrade automatically.
 
 ## Verification
 
@@ -85,4 +103,4 @@ Homebrew tap automation is planned for the first public distribution path, but t
 
 ## Updates
 
-Operators can update by installing a newer release with the install script, package manager, or Homebrew once the tap is active. Runtime deployment updates remain a separate CLI concern handled by `bare-systems update`; updating the installer binary does not automatically update customer workloads.
+Operators can update by installing a newer release with the install script, package manager, or Homebrew once the tap is active. Runtime deployment updates remain a separate CLI concern handled by `bare-systems update`; updating the installer binary does not automatically update customer workloads. When using the install script, Tardigrade is refreshed during the CLI install step rather than during deployment start/update.

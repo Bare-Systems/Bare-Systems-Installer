@@ -1,8 +1,8 @@
 # Runtime
 
-Bare Systems runtime behavior is Docker Compose based. The CLI does not replace Docker or supervise individual containers itself.
+Bare Systems runtime behavior uses Docker Compose for containers and Tardigrade as a host binary for the public reverse proxy. The CLI does not replace Docker or supervise individual containers itself.
 
-Tardigrade is outside the Compose graph. It is expected to run as a host binary on the edge node so it can bind public ports and proxy traffic into Docker-managed services.
+Tardigrade is outside the Compose graph. It runs on the edge node so it can bind public ports and proxy traffic into Docker-managed services without being pulled as a deployment-time image.
 
 ## Prerequisites
 
@@ -11,6 +11,7 @@ Runtime commands require:
 - Docker CLI on `PATH`
 - reachable Docker daemon
 - modern Docker Compose plugin through `docker compose`
+- `tardigrade` on `PATH` for `install`, `start`, `stop`, `restart`, and `update`
 
 Legacy `docker-compose` is not supported.
 
@@ -34,6 +35,20 @@ docker compose \
   --profile core \
   up -d
 ```
+
+## Tardigrade Proxy
+
+Runtime artifact writes also generate:
+
+```text
+<project-dir>/tardigrade/tardigrade.conf
+<project-dir>/tardigrade/public/
+<project-dir>/state/tardigrade.pid
+```
+
+The generated Tardigrade config listens on `PUBLIC_HTTP_PORT` and proxies to Bear Claw Web through the host loopback port rendered into Compose. By default Bear Claw Web is published as `127.0.0.1:8080:80`, and Tardigrade proxies to `http://127.0.0.1:8080`.
+
+The install script installs the Tardigrade CLI before runtime commands are used. Runtime commands do not download Tardigrade.
 
 ## Commands
 
@@ -60,16 +75,16 @@ bare-systems report
 
 Mappings:
 
-| CLI | Compose behavior |
-| --- | --- |
-| `install` | render Compose, validate with `docker compose config -q`, then `docker compose pull` |
-| `start` | render Compose, then `docker compose up -d` |
-| `stop` | `docker compose stop` |
-| `restart` | `docker compose restart` |
-| `update` | render Compose, pull images, then `up -d` |
-| `status` | `docker compose ps --format json` summarized for humans or JSON |
-| `ps` | `docker compose ps`, or structured state with `--json` |
-| `logs [service]` | `docker compose logs --tail 200 [service]` |
+| CLI | Compose behavior | Tardigrade behavior |
+| --- | --- | --- |
+| `install` | render Compose, validate with `docker compose config -q`, then `docker compose pull` | render and validate `tardigrade.conf` |
+| `start` | render Compose, then `docker compose up -d` | start Tardigrade with `--daemon`, or reload if already running |
+| `stop` | `docker compose stop` | stop Tardigrade when running |
+| `restart` | `docker compose restart` | reload Tardigrade after Compose restarts |
+| `update` | render Compose, pull images, then `up -d` | reload Tardigrade after Compose updates |
+| `status` | `docker compose ps --format json` summarized for humans or JSON | not queried yet |
+| `ps` | `docker compose ps`, or structured state with `--json` | not queried yet |
+| `logs [service]` | `docker compose logs --tail 200 [service]` | not queried yet |
 
 `doctor` and `bundle` use the same runtime boundaries but are support-oriented. `doctor` summarizes host, config, Compose, runtime, product health, and Portal reporting status. `bundle` writes a redacted tar.gz support artifact with rendered config, runtime state, logs, and doctor output.
 

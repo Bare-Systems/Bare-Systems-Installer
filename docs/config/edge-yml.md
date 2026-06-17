@@ -73,6 +73,8 @@ BARE_PROJECT_NAME
 PUBLIC_HTTP_PORT
 PUBLIC_HTTPS_PORT
 ADMIN_BIND_ADDRESS
+BEARCLAW_WEB_BIND_ADDRESS
+BEARCLAW_WEB_PORT
 BARE_COMPOSE_DIR
 BARE_STORAGE_ROOT
 ```
@@ -95,6 +97,13 @@ BARE_IMAGE_TAG=homelab
 
 Rendered Compose image names use `BARE_IMAGE_REGISTRY/<imageRepository>:BARE_IMAGE_TAG` unless a per-service override such as `BEARCLAW_WEB_IMAGE`, `KOALA_ORCHESTRATOR_IMAGE`, or `KOALA_WORKER_IMAGE` is set. Tardigrade is not rendered as a Compose image; it runs as a host binary.
 
+`PUBLIC_HTTP_PORT` controls the generated Tardigrade listen port. `BEARCLAW_WEB_BIND_ADDRESS` and `BEARCLAW_WEB_PORT` control the loopback host port that Bear Claw Web publishes for Tardigrade to proxy to. The defaults are:
+
+```text
+BEARCLAW_WEB_BIND_ADDRESS=127.0.0.1
+BEARCLAW_WEB_PORT=8080
+```
+
 Do not put tokens, passwords, API keys, private keys, or TLS keys in `.env`. Validation flags secret-looking keys such as `PORTAL_TOKEN`, `PASSWORD`, `SECRET`, `API_KEY`, and `PRIVATE_KEY`.
 
 ## Secrets
@@ -115,7 +124,7 @@ Validate the deployment model:
 bare-systems --project-dir ./tmp-edge validate
 ```
 
-Render canonical Compose YAML:
+Render canonical runtime artifacts:
 
 ```sh
 bare-systems --project-dir ./tmp-edge config render

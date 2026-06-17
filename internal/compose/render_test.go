@@ -14,7 +14,7 @@ func TestRenderDefaultDeployment(t *testing.T) {
 		t.Fatalf("Render returned error: %v", err)
 	}
 	out := string(data)
-	for _, want := range []string{"services:", "bear-claw-web:"} {
+	for _, want := range []string{"services:", "bear-claw-web:", "127.0.0.1:8080:80", "http://localhost/up"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("rendered compose missing %q:\n%s", want, out)
 		}

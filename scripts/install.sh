@@ -5,6 +5,11 @@ REPO="${BARE_SYSTEMS_REPO:-Bare-Systems/Bare-Systems-Installer}"
 VERSION="${BARE_SYSTEMS_VERSION:-latest}"
 INSTALL_DIR="${BARE_SYSTEMS_INSTALL_DIR:-/usr/local/bin}"
 BINARY_NAME="bare-systems"
+TARDIGRADE_REPO="${BARE_SYSTEMS_TARDIGRADE_REPO:-Bare-Systems/Tardigrade}"
+TARDIGRADE_VERSION="${BARE_SYSTEMS_TARDIGRADE_VERSION:-latest}"
+TARDIGRADE_RELEASE_BASE_URL="${BARE_SYSTEMS_TARDIGRADE_RELEASE_BASE_URL:-https://github.com/$TARDIGRADE_REPO/releases}"
+TARDIGRADE_ASSET="${BARE_SYSTEMS_TARDIGRADE_ASSET:-tardigrade-linux-x86_64.tar.gz}"
+SKIP_TARDIGRADE="${BARE_SYSTEMS_SKIP_TARDIGRADE:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -14,6 +19,9 @@ Environment:
   BARE_SYSTEMS_VERSION      Release tag to install, for example v0.1.0. Defaults to latest.
   BARE_SYSTEMS_REPO         GitHub repo owner/name. Defaults to Bare-Systems/Bare-Systems-Installer.
   BARE_SYSTEMS_INSTALL_DIR  Install directory. Defaults to /usr/local/bin.
+  BARE_SYSTEMS_SKIP_TARDIGRADE  Set to 1 to install only bare-systems.
+  BARE_SYSTEMS_TARDIGRADE_VERSION  Tardigrade release tag. Defaults to latest.
+  BARE_SYSTEMS_TARDIGRADE_ASSET    Tardigrade archive asset. Defaults to tardigrade-linux-x86_64.tar.gz.
 USAGE
 }
 
@@ -101,9 +109,38 @@ verify_checksum() {
   exit 1
 }
 
-install_binary() {
-  src="$1"
-  dst="${INSTALL_DIR}/${BINARY_NAME}"
+verify_checksum_by_basename() {
+  archive="$1"
+  checksums="$2"
+  asset="$3"
+  expected="$(awk -v target="$asset" '
+    {
+      n = split($2, parts, "/")
+      if (parts[n] == target) {
+        print $1
+        exit
+      }
+    }
+  ' "$checksums")"
+  if [ -z "$expected" ]; then
+    echo "bare-systems install: checksum entry missing for $asset" >&2
+    exit 1
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$archive" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
+  else
+    echo "bare-systems install: sha256sum or shasum is required for checksum verification" >&2
+    exit 1
+  fi
+  if [ "$actual" != "$expected" ]; then
+    printf 'bare-systems install: checksum mismatch for %s\n  expected: %s\n  got:      %s\n' "$asset" "$expected" "$actual" >&2
+    exit 1
+  fi
+}
+
+ensure_install_dir() {
   if [ ! -d "$INSTALL_DIR" ]; then
     if [ -w "$(dirname "$INSTALL_DIR")" ]; then
       mkdir -p "$INSTALL_DIR"
@@ -114,7 +151,12 @@ install_binary() {
       exit 1
     fi
   fi
+}
 
+install_file() {
+  src="$1"
+  dst="$2"
+  ensure_install_dir
   if [ -w "$INSTALL_DIR" ]; then
     install -m 0755 "$src" "$dst"
   elif command -v sudo >/dev/null 2>&1; then
@@ -123,13 +165,50 @@ install_binary() {
     echo "bare-systems install: cannot write to $INSTALL_DIR; rerun with permissions or set BARE_SYSTEMS_INSTALL_DIR" >&2
     exit 1
   fi
+}
+
+install_binary() {
+  src="$1"
+  dst="${INSTALL_DIR}/${BINARY_NAME}"
+  install_file "$src" "$dst"
   echo "bare-systems installed to $dst"
+}
+
+install_tardigrade() {
+  if [ "$SKIP_TARDIGRADE" = "1" ] || [ "$SKIP_TARDIGRADE" = "true" ]; then
+    echo "tardigrade install skipped"
+    return
+  fi
+
+  if [ "$TARDIGRADE_VERSION" = "latest" ]; then
+    tardigrade_base_url="${TARDIGRADE_RELEASE_BASE_URL}/latest/download"
+  else
+    tardigrade_base_url="${TARDIGRADE_RELEASE_BASE_URL}/download/${TARDIGRADE_VERSION}"
+  fi
+
+  tardigrade_archive="$tmp_dir/$TARDIGRADE_ASSET"
+  tardigrade_checksums="$tmp_dir/tardigrade-checksums.txt"
+  download "${tardigrade_base_url}/${TARDIGRADE_ASSET}" "$tardigrade_archive"
+  download "${tardigrade_base_url}/tardigrade-checksums.txt" "$tardigrade_checksums"
+  verify_checksum_by_basename "$tardigrade_archive" "$tardigrade_checksums" "$TARDIGRADE_ASSET"
+
+  tardigrade_dir="$tmp_dir/tardigrade"
+  mkdir -p "$tardigrade_dir"
+  tar -xzf "$tardigrade_archive" -C "$tardigrade_dir"
+  if [ ! -f "$tardigrade_dir/tardigrade" ]; then
+    echo "bare-systems install: Tardigrade archive did not contain tardigrade" >&2
+    exit 1
+  fi
+  install_file "$tardigrade_dir/tardigrade" "${INSTALL_DIR}/tardigrade"
+  install_file "$tardigrade_dir/tardigrade" "${INSTALL_DIR}/tardi"
+  echo "tardigrade installed to ${INSTALL_DIR}/tardigrade"
 }
 
 need_cmd uname
 need_cmd tar
 need_cmd grep
 need_cmd sed
+need_cmd awk
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT INT TERM
@@ -153,3 +232,4 @@ if [ ! -f "$BINARY_NAME" ]; then
   exit 1
 fi
 install_binary "$tmp_dir/$BINARY_NAME"
+install_tardigrade

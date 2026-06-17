@@ -202,6 +202,9 @@ func TestInitCommandCreatesProjectDefaults(t *testing.T) {
 		filepath.Join(projectDir, "edge.yml"),
 		filepath.Join(projectDir, ".env"),
 		filepath.Join(projectDir, "compose", "generated.compose.yml"),
+		filepath.Join(projectDir, "tardigrade"),
+		filepath.Join(projectDir, "tardigrade", "public"),
+		filepath.Join(projectDir, "tardigrade", "tardigrade.conf"),
 		filepath.Join(projectDir, "manifests", "README.md"),
 	} {
 		if _, err := os.Stat(path); err != nil {
@@ -294,6 +297,8 @@ func TestInitCommandSupportsLocalImageRegistry(t *testing.T) {
 	for _, want := range []string{
 		"BARE_IMAGE_REGISTRY=localhost:5000/bare",
 		"BARE_IMAGE_TAG=homelab",
+		"BEARCLAW_WEB_BIND_ADDRESS=127.0.0.1",
+		"BEARCLAW_WEB_PORT=8080",
 		"# BEARCLAW_WEB_IMAGE=",
 	} {
 		if !strings.Contains(string(envData), want) {
@@ -345,6 +350,10 @@ func TestConfigRenderWriteCommand(t *testing.T) {
 	if err := os.Remove(composeFile); err != nil {
 		t.Fatalf("remove compose file: %v", err)
 	}
+	tardigradeConfigFile := filepath.Join(projectDir, "tardigrade", "tardigrade.conf")
+	if err := os.Remove(tardigradeConfigFile); err != nil {
+		t.Fatalf("remove Tardigrade config file: %v", err)
+	}
 
 	stdout.Reset()
 	stderr.Reset()
@@ -363,6 +372,16 @@ func TestConfigRenderWriteCommand(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), composeFile) {
 		t.Fatalf("stdout missing compose file path: %q", stdout.String())
+	}
+	tardigradeData, err := os.ReadFile(tardigradeConfigFile)
+	if err != nil {
+		t.Fatalf("read Tardigrade config file: %v", err)
+	}
+	if !strings.Contains(string(tardigradeData), "proxy_pass http://127.0.0.1:8080;") {
+		t.Fatalf("Tardigrade config missing BearClaw upstream:\n%s", string(tardigradeData))
+	}
+	if !strings.Contains(stdout.String(), tardigradeConfigFile) {
+		t.Fatalf("stdout missing Tardigrade config file path: %q", stdout.String())
 	}
 }
 
@@ -416,14 +435,46 @@ func TestInstallCommandWritesComposeAndRunsPull(t *testing.T) {
 	if _, err := os.Stat(composeFile); err != nil {
 		t.Fatalf("compose file not written: %v", err)
 	}
+	tardigradeConfigFile := filepath.Join(projectDir, "tardigrade", "tardigrade.conf")
+	if _, err := os.Stat(tardigradeConfigFile); err != nil {
+		t.Fatalf("Tardigrade config file not written: %v", err)
+	}
 	if !runner.sawArgs("config -q") {
 		t.Fatalf("docker compose config -q was not run: %#v", runner.commands)
 	}
 	if !runner.sawArgs("pull") {
 		t.Fatalf("docker compose pull was not run: %#v", runner.commands)
 	}
+	if !runner.sawCommand("tardigrade", "validate -c "+tardigradeConfigFile) {
+		t.Fatalf("Tardigrade config validation was not run: %#v", runner.commands)
+	}
 	if !runner.sawComposeDir(filepath.Join(projectDir, "compose")) {
 		t.Fatalf("compose commands did not run from resolved project dir: %#v", runner.commands)
+	}
+}
+
+func TestStartCommandStartsTardigradeAfterCompose(t *testing.T) {
+	projectDir := t.TempDir()
+	runner := newCLIFakeRunner()
+	app := New()
+	app.runner = runner
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := app.Run([]string{"--project-dir", projectDir, "start"}, &stdout, &stderr)
+
+	if code != apperrors.ExitOK {
+		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	tardigradeConfigFile := filepath.Join(projectDir, "tardigrade", "tardigrade.conf")
+	if !runner.sawArgs("up -d") {
+		t.Fatalf("docker compose up was not run: %#v", runner.commands)
+	}
+	if !runner.sawCommand("tardigrade", "status -c "+tardigradeConfigFile) {
+		t.Fatalf("Tardigrade status was not checked: %#v", runner.commands)
+	}
+	if !runner.sawCommand("tardigrade", "run -c "+tardigradeConfigFile+" --daemon") {
+		t.Fatalf("Tardigrade was not started as a daemon: %#v", runner.commands)
 	}
 }
 
@@ -749,12 +800,24 @@ func (r *cliFakeRunner) Run(_ context.Context, command edgeruntime.Command) (edg
 	if strings.Contains(args, "logs --tail 200") {
 		return edgeruntime.Result{Stdout: "log line\n"}, nil
 	}
+	if command.Name == "tardigrade" && strings.HasPrefix(args, "status -c ") {
+		return edgeruntime.Result{Stdout: "status: stopped\n"}, nil
+	}
 	return edgeruntime.Result{Stdout: "ok\n"}, nil
 }
 
 func (r *cliFakeRunner) sawArgs(fragment string) bool {
 	for _, command := range r.commands {
 		if strings.Contains(strings.Join(command.Args, " "), fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *cliFakeRunner) sawCommand(name string, argsFragment string) bool {
+	for _, command := range r.commands {
+		if command.Name == name && strings.Contains(strings.Join(command.Args, " "), argsFragment) {
 			return true
 		}
 	}

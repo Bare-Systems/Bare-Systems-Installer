@@ -69,15 +69,17 @@ func ParseEnv(data []byte) (Environment, error) {
 
 func DerivedEnv(deployment Deployment) Environment {
 	env := Environment{
-		"BARE_CHANNEL":        deployment.Spec.Channel,
-		"BARE_IMAGE_REGISTRY": "ghcr.io/bare-systems",
-		"BARE_IMAGE_TAG":      "latest",
-		"BARE_PROJECT_NAME":   deployment.ComposeProjectName(),
-		"ADMIN_BIND_ADDRESS":  deployment.Spec.Networking.AdminBindAddress,
-		"PUBLIC_HTTP_PORT":    strconv.Itoa(deployment.Spec.Networking.PublicHTTPPort),
-		"PUBLIC_HTTPS_PORT":   strconv.Itoa(deployment.Spec.Networking.PublicHTTPSPort),
-		"BARE_COMPOSE_DIR":    deployment.ComposeProjectDirectory(),
-		"BARE_STORAGE_ROOT":   deployment.Spec.Storage.Root,
+		"BARE_CHANNEL":              deployment.Spec.Channel,
+		"BARE_IMAGE_REGISTRY":       "ghcr.io/bare-systems",
+		"BARE_IMAGE_TAG":            "latest",
+		"BARE_PROJECT_NAME":         deployment.ComposeProjectName(),
+		"ADMIN_BIND_ADDRESS":        deployment.Spec.Networking.AdminBindAddress,
+		"BEARCLAW_WEB_BIND_ADDRESS": "127.0.0.1",
+		"BEARCLAW_WEB_PORT":         "8080",
+		"PUBLIC_HTTP_PORT":          strconv.Itoa(deployment.Spec.Networking.PublicHTTPPort),
+		"PUBLIC_HTTPS_PORT":         strconv.Itoa(deployment.Spec.Networking.PublicHTTPSPort),
+		"BARE_COMPOSE_DIR":          deployment.ComposeProjectDirectory(),
+		"BARE_STORAGE_ROOT":         deployment.Spec.Storage.Root,
 	}
 	return env
 }

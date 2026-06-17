@@ -2,7 +2,7 @@
 
 Bare Systems modules are declared through module manifests. The CLI uses manifests to map operator intent in `edge.yml` to Compose profiles, services, images, required config, volumes, secrets, and health checks.
 
-Tardigrade is not rendered as a Compose service. It runs as a host binary so it can bind public ports and reverse proxy into the Docker network.
+Tardigrade is not rendered as a Compose service. It runs as a host binary so it can bind public ports and reverse proxy into the Docker network. The core Bear Claw Web service is published on a loopback host port for Tardigrade to reach.
 
 The built-in manifest schema is versioned:
 
@@ -93,3 +93,5 @@ Validation enforces:
 - non-secret environment values derived from `edge.yml`
 
 The rendered Compose file is a generated artifact. Operators should edit `edge.yml`, `.env`, and secret files rather than editing generated Compose YAML directly.
+
+For the required `core` module, Bear Claw Web is exposed to the host at `BEARCLAW_WEB_BIND_ADDRESS:BEARCLAW_WEB_PORT`, defaulting to `127.0.0.1:8080`. The generated Tardigrade config proxies public HTTP traffic to that loopback endpoint.

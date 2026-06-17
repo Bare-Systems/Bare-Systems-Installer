@@ -382,10 +382,13 @@ func (a *App) runInit(args []string, opts globalOptions, stdout io.Writer, stder
 			deployment.ComposeProjectDirectory(),
 			"generated.compose.yml",
 		),
-		StateDir:    filepath.Join(projectDir, "state"),
-		BundleDir:   filepath.Join(projectDir, "bundles"),
-		ManifestDir: filepath.Join(projectDir, "manifests"),
-		BackupsDir:  filepath.Join(projectDir, "backups"),
+		StateDir:             filepath.Join(projectDir, "state"),
+		BundleDir:            filepath.Join(projectDir, "bundles"),
+		ManifestDir:          filepath.Join(projectDir, "manifests"),
+		BackupsDir:           filepath.Join(projectDir, "backups"),
+		TardigradeDir:        filepath.Join(projectDir, "tardigrade"),
+		TardigradePublicDir:  edgeruntime.TardigradePublicDir(projectDir),
+		TardigradeConfigFile: edgeruntime.TardigradeConfigPath(projectDir),
 	}
 
 	result, err := initializeProject(paths, deployment, env, composeYAML, initOpts.force)
@@ -404,6 +407,7 @@ func (a *App) runInit(args []string, opts globalOptions, stdout io.Writer, stder
 		fmt.Fprintf(stdout, "config: %s\n", configPath)
 		fmt.Fprintf(stdout, "env: %s\n", envPath)
 		fmt.Fprintf(stdout, "compose: %s\n", paths.ComposeFile)
+		fmt.Fprintf(stdout, "tardigrade: %s\n", paths.TardigradeConfigFile)
 		if len(result.Skipped) > 0 {
 			fmt.Fprintf(stdout, "skipped existing files: %s\n", strings.Join(result.Skipped, ", "))
 		}
@@ -451,18 +455,24 @@ func (a *App) runConfigRender(args []string, opts globalOptions, stdout io.Write
 		if err != nil {
 			return a.writeCommandError("config render", apperrors.CodePermissions, err, opts, stdout, stderr)
 		}
+		tardigradeConfigFile, err := writeTardigradeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError("config render", apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
 		data := map[string]any{
-			"configSource": ctx.configSource,
-			"composeFile":  composeFile,
+			"configSource":         ctx.configSource,
+			"composeFile":          composeFile,
+			"tardigradeConfigFile": tardigradeConfigFile,
 		}
 		if opts.json {
-			if err := output.WriteEnvelopeWithWarnings(stdout, "config render", apperrors.CodeOK, "Rendered Compose config written", data, ctx.warnings, a.clock); err != nil {
+			if err := output.WriteEnvelopeWithWarnings(stdout, "config render", apperrors.CodeOK, "Rendered runtime config written", data, ctx.warnings, a.clock); err != nil {
 				return apperrors.ExitGeneric
 			}
 			return apperrors.ExitOK
 		}
 		if !opts.quiet {
 			fmt.Fprintf(stdout, "Rendered Compose config: %s\n", composeFile)
+			fmt.Fprintf(stdout, "Rendered Tardigrade config: %s\n", tardigradeConfigFile)
 		}
 		for _, warning := range ctx.warnings {
 			fmt.Fprintf(stderr, "warning: %s\n", warning)
@@ -494,7 +504,7 @@ func (a *App) parseConfigRenderFlags(args []string, stderr io.Writer) (configRen
 	var renderOpts configRenderOptions
 	flags := flag.NewFlagSet("config render", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.BoolVar(&renderOpts.write, "write", false, "write generated Compose YAML to the project compose directory")
+	flags.BoolVar(&renderOpts.write, "write", false, "write generated runtime artifacts to the project directory")
 	flags.Usage = func() {
 		fmt.Fprintf(stderr, "Usage:\n  %s [global flags] config render [--write]\n", a.name)
 	}
@@ -704,6 +714,7 @@ func (a *App) runRuntimeCommand(command string, args []string, opts globalOption
 		ComposeFile: filepath.Join(ctx.deployment.ComposeProjectDirectory(), "generated.compose.yml"),
 		Profiles:    ctx.validationResult.Profiles,
 	}
+	tardigrade := tardigradeRuntime(ctx, a.runner)
 
 	switch command {
 	case "install":
@@ -711,16 +722,27 @@ func (a *App) runRuntimeCommand(command string, args []string, opts globalOption
 		if err != nil {
 			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
 		}
+		tardigradeConfigFile, err := writeTardigradeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
 		if result, err := manager.Config(context.Background()); err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		if result, err := tardigrade.Validate(context.Background()); err != nil {
 			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
 		}
 		result, err := manager.Pull(context.Background())
 		if err != nil {
 			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
 		}
-		return a.writeRuntimeSuccess(command, "Deployment artifacts rendered and images pulled", map[string]any{"composeFile": composeFile}, result, opts, stdout, stderr)
+		return a.writeRuntimeSuccess(command, "Deployment artifacts rendered, images pulled, and Tardigrade config validated", map[string]any{"composeFile": composeFile, "tardigradeConfigFile": tardigradeConfigFile}, result, opts, stdout, stderr)
 	case "start":
 		composeFile, err := writeComposeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
+		tardigradeConfigFile, err := writeTardigradeArtifact(ctx)
 		if err != nil {
 			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
 		}
@@ -728,9 +750,17 @@ func (a *App) runRuntimeCommand(command string, args []string, opts globalOption
 		if err != nil {
 			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
 		}
-		return a.writeRuntimeSuccess(command, "Deployment started", map[string]any{"composeFile": composeFile}, result, opts, stdout, stderr)
+		result, err = tardigrade.StartOrReload(context.Background())
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		return a.writeRuntimeSuccess(command, "Deployment and Tardigrade started", map[string]any{"composeFile": composeFile, "tardigradeConfigFile": tardigradeConfigFile}, result, opts, stdout, stderr)
 	case "update":
 		composeFile, err := writeComposeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
+		tardigradeConfigFile, err := writeTardigradeArtifact(ctx)
 		if err != nil {
 			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
 		}
@@ -741,19 +771,42 @@ func (a *App) runRuntimeCommand(command string, args []string, opts globalOption
 		if err != nil {
 			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
 		}
-		return a.writeRuntimeSuccess(command, "Deployment updated", map[string]any{"composeFile": composeFile}, result, opts, stdout, stderr)
-	case "stop":
-		result, err := manager.Stop(context.Background())
+		result, err = tardigrade.StartOrReload(context.Background())
 		if err != nil {
 			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
 		}
-		return a.writeRuntimeSuccess(command, "Deployment stopped", nil, result, opts, stdout, stderr)
+		return a.writeRuntimeSuccess(command, "Deployment and Tardigrade updated", map[string]any{"composeFile": composeFile, "tardigradeConfigFile": tardigradeConfigFile}, result, opts, stdout, stderr)
+	case "stop":
+		if _, err := writeTardigradeArtifact(ctx); err != nil {
+			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
+		result, err := tardigrade.StopIfRunning(context.Background())
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		result, err = manager.Stop(context.Background())
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		return a.writeRuntimeSuccess(command, "Deployment and Tardigrade stopped", nil, result, opts, stdout, stderr)
 	case "restart":
+		composeFile, err := writeComposeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
+		tardigradeConfigFile, err := writeTardigradeArtifact(ctx)
+		if err != nil {
+			return a.writeCommandError(command, apperrors.CodePermissions, err, opts, stdout, stderr)
+		}
 		result, err := manager.Restart(context.Background())
 		if err != nil {
 			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
 		}
-		return a.writeRuntimeSuccess(command, "Deployment restarted", nil, result, opts, stdout, stderr)
+		result, err = tardigrade.StartOrReload(context.Background())
+		if err != nil {
+			return a.writeRuntimeError(command, result, err, opts, stdout, stderr)
+		}
+		return a.writeRuntimeSuccess(command, "Deployment restarted and Tardigrade reloaded", map[string]any{"composeFile": composeFile, "tardigradeConfigFile": tardigradeConfigFile}, result, opts, stdout, stderr)
 	case "status":
 		result, err := manager.PS(context.Background(), true)
 		if err != nil {
@@ -1089,16 +1142,19 @@ func (a *App) writeRuntimeSuccess(command string, message string, data map[strin
 }
 
 type initPaths struct {
-	ProjectDir  string `json:"projectDir"`
-	ConfigDir   string `json:"configDir"`
-	ConfigFile  string `json:"configFile"`
-	EnvFile     string `json:"envFile"`
-	ComposeDir  string `json:"composeDir"`
-	ComposeFile string `json:"composeFile"`
-	StateDir    string `json:"stateDir"`
-	BundleDir   string `json:"bundleDir"`
-	ManifestDir string `json:"manifestDir"`
-	BackupsDir  string `json:"backupsDir"`
+	ProjectDir           string `json:"projectDir"`
+	ConfigDir            string `json:"configDir"`
+	ConfigFile           string `json:"configFile"`
+	EnvFile              string `json:"envFile"`
+	ComposeDir           string `json:"composeDir"`
+	ComposeFile          string `json:"composeFile"`
+	TardigradeDir        string `json:"tardigradeDir"`
+	TardigradePublicDir  string `json:"tardigradePublicDir"`
+	TardigradeConfigFile string `json:"tardigradeConfigFile"`
+	StateDir             string `json:"stateDir"`
+	BundleDir            string `json:"bundleDir"`
+	ManifestDir          string `json:"manifestDir"`
+	BackupsDir           string `json:"backupsDir"`
 }
 
 type initResult struct {
@@ -1118,6 +1174,8 @@ func initializeProject(paths initPaths, deployment deploymentconfig.Deployment, 
 		{paths.ProjectDir, 0o755},
 		{paths.ConfigDir, 0o755},
 		{paths.ComposeDir, 0o755},
+		{paths.TardigradeDir, 0o755},
+		{paths.TardigradePublicDir, 0o755},
 		{paths.StateDir, 0o700},
 		{paths.BundleDir, 0o755},
 		{paths.ManifestDir, 0o755},
@@ -1136,6 +1194,7 @@ func initializeProject(paths initPaths, deployment deploymentconfig.Deployment, 
 	if err != nil {
 		return initResult{}, fmt.Errorf("marshal default deployment: %w", err)
 	}
+	tardigradeConfig := []byte(edgeruntime.RenderTardigradeConfig(tardigradeConfigOptions(deployment, env)))
 	for _, file := range []struct {
 		path string
 		data []byte
@@ -1143,6 +1202,7 @@ func initializeProject(paths initPaths, deployment deploymentconfig.Deployment, 
 		{paths.ConfigFile, configYAML},
 		{paths.EnvFile, defaultEnvFile(env)},
 		{paths.ComposeFile, composeYAML},
+		{paths.TardigradeConfigFile, tardigradeConfig},
 		{filepath.Join(paths.ManifestDir, "README.md"), []byte(defaultManifestReadme())},
 	} {
 		written, err := writeDefaultFile(file.path, file.data, force)
@@ -1224,6 +1284,34 @@ func writeComposeArtifact(ctx deploymentContext) (string, error) {
 		return "", fmt.Errorf("write generated Compose file %s: %w", path, err)
 	}
 	return path, nil
+}
+
+func writeTardigradeArtifact(ctx deploymentContext) (string, error) {
+	projectRoot := ctx.deployment.Spec.Storage.Root
+	path := edgeruntime.TardigradeConfigPath(projectRoot)
+	if err := edgeruntime.WriteTardigradeConfig(path, tardigradeConfigOptions(ctx.deployment, ctx.env)); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func tardigradeConfigOptions(deployment deploymentconfig.Deployment, env deploymentconfig.Environment) edgeruntime.TardigradeConfigOptions {
+	projectRoot := deployment.Spec.Storage.Root
+	return edgeruntime.TardigradeConfigOptions{
+		ListenPort:  edgeruntime.TardigradeListenPort(env["PUBLIC_HTTP_PORT"]),
+		PidFile:     edgeruntime.TardigradePidFile(projectRoot),
+		PublicDir:   edgeruntime.TardigradePublicDir(projectRoot),
+		UpstreamURL: edgeruntime.TardigradeUpstreamURL(env["BEARCLAW_WEB_BIND_ADDRESS"], env["BEARCLAW_WEB_PORT"]),
+	}
+}
+
+func tardigradeRuntime(ctx deploymentContext, runner edgeruntime.Runner) edgeruntime.Tardigrade {
+	configPath := edgeruntime.TardigradeConfigPath(ctx.deployment.Spec.Storage.Root)
+	return edgeruntime.Tardigrade{
+		Runner:     runner,
+		ConfigFile: configPath,
+		WorkDir:    filepath.Dir(configPath),
+	}
 }
 
 func topLevelCommands() []string {

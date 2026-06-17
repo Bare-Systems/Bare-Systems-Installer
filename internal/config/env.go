@@ -69,13 +69,15 @@ func ParseEnv(data []byte) (Environment, error) {
 
 func DerivedEnv(deployment Deployment) Environment {
 	env := Environment{
-		"BARE_CHANNEL":       deployment.Spec.Channel,
-		"BARE_PROJECT_NAME":  deployment.ComposeProjectName(),
-		"ADMIN_BIND_ADDRESS": deployment.Spec.Networking.AdminBindAddress,
-		"PUBLIC_HTTP_PORT":   strconv.Itoa(deployment.Spec.Networking.PublicHTTPPort),
-		"PUBLIC_HTTPS_PORT":  strconv.Itoa(deployment.Spec.Networking.PublicHTTPSPort),
-		"BARE_COMPOSE_DIR":   deployment.ComposeProjectDirectory(),
-		"BARE_STORAGE_ROOT":  deployment.Spec.Storage.Root,
+		"BARE_CHANNEL":        deployment.Spec.Channel,
+		"BARE_IMAGE_REGISTRY": "registry.example.com/bare",
+		"BARE_IMAGE_TAG":      "unspecified",
+		"BARE_PROJECT_NAME":   deployment.ComposeProjectName(),
+		"ADMIN_BIND_ADDRESS":  deployment.Spec.Networking.AdminBindAddress,
+		"PUBLIC_HTTP_PORT":    strconv.Itoa(deployment.Spec.Networking.PublicHTTPPort),
+		"PUBLIC_HTTPS_PORT":   strconv.Itoa(deployment.Spec.Networking.PublicHTTPSPort),
+		"BARE_COMPOSE_DIR":    deployment.ComposeProjectDirectory(),
+		"BARE_STORAGE_ROOT":   deployment.Spec.Storage.Root,
 	}
 	return env
 }

@@ -32,6 +32,9 @@ func TestHelpCommand(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Usage:") {
 		t.Fatalf("help output missing usage: %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "--image-registry") {
+		t.Fatalf("help output missing init image registry flag: %q", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
@@ -266,6 +269,49 @@ func TestInitCommandDoesNotOverwriteWithoutForce(t *testing.T) {
 	}
 	if strings.Contains(string(data), "homelab custom note") {
 		t.Fatalf("init --force did not regenerate config:\n%s", string(data))
+	}
+}
+
+func TestInitCommandSupportsLocalImageRegistry(t *testing.T) {
+	projectDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := New().Run([]string{
+		"--project-dir", projectDir,
+		"init",
+		"--image-registry", "localhost:5000/bare",
+		"--image-tag", "homelab",
+	}, &stdout, &stderr)
+
+	if code != apperrors.ExitOK {
+		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
+	}
+	envData, err := os.ReadFile(filepath.Join(projectDir, ".env"))
+	if err != nil {
+		t.Fatalf("read env: %v", err)
+	}
+	for _, want := range []string{
+		"BARE_IMAGE_REGISTRY=localhost:5000/bare",
+		"BARE_IMAGE_TAG=homelab",
+		"# TARDIGRADE_IMAGE=",
+	} {
+		if !strings.Contains(string(envData), want) {
+			t.Fatalf(".env missing %q:\n%s", want, string(envData))
+		}
+	}
+	composeData, err := os.ReadFile(filepath.Join(projectDir, "compose", "generated.compose.yml"))
+	if err != nil {
+		t.Fatalf("read compose: %v", err)
+	}
+	for _, want := range []string{
+		"image: localhost:5000/bare/tardigrade:homelab",
+		"image: localhost:5000/bare/bearclaw-web:homelab",
+		"image: localhost:5000/bare/bearclaw-agent:homelab",
+	} {
+		if !strings.Contains(string(composeData), want) {
+			t.Fatalf("compose missing %q:\n%s", want, string(composeData))
+		}
 	}
 }
 

@@ -53,6 +53,57 @@ func TestRenderUsesProvidedEnvironment(t *testing.T) {
 	}
 }
 
+func TestRenderResolvesImageRegistryAndPorts(t *testing.T) {
+	deployment := config.DefaultDeployment()
+	env := config.MergeEnv(config.DerivedEnv(deployment), config.Environment{
+		"BARE_IMAGE_REGISTRY": "localhost:5000/bare",
+		"BARE_IMAGE_TAG":      "homelab",
+		"PUBLIC_HTTP_PORT":    "8080",
+		"PUBLIC_HTTPS_PORT":   "8443",
+	})
+
+	data, err := Render(deployment, modules.BuiltInRegistry(), env)
+	if err != nil {
+		t.Fatalf("Render returned error: %v", err)
+	}
+	out := string(data)
+	for _, want := range []string{
+		"image: localhost:5000/bare/tardigrade:homelab",
+		"image: localhost:5000/bare/bearclaw-web:homelab",
+		"image: localhost:5000/bare/bearclaw-agent:homelab",
+		"- 8080:80",
+		"- 8443:443",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("rendered compose missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "${") {
+		t.Fatalf("rendered compose kept unresolved interpolation:\n%s", out)
+	}
+}
+
+func TestRenderUsesServiceImageOverride(t *testing.T) {
+	deployment := config.DefaultDeployment()
+	env := config.MergeEnv(config.DerivedEnv(deployment), config.Environment{
+		"BARE_IMAGE_REGISTRY": "localhost:5000/bare",
+		"BARE_IMAGE_TAG":      "homelab",
+		"TARDIGRADE_IMAGE":    "localhost:5000/custom/tardigrade:dev",
+	})
+
+	data, err := Render(deployment, modules.BuiltInRegistry(), env)
+	if err != nil {
+		t.Fatalf("Render returned error: %v", err)
+	}
+	out := string(data)
+	if !strings.Contains(out, "image: localhost:5000/custom/tardigrade:dev") {
+		t.Fatalf("rendered compose did not use service override:\n%s", out)
+	}
+	if !strings.Contains(out, "image: localhost:5000/bare/bearclaw-web:homelab") {
+		t.Fatalf("rendered compose did not keep base registry for other services:\n%s", out)
+	}
+}
+
 func TestValidateRenderedRejectsNoServices(t *testing.T) {
 	if err := ValidateRendered([]byte("name: bare-systems\nservices: {}\n")); err == nil {
 		t.Fatalf("expected validation error")

@@ -66,6 +66,8 @@ Production defaults:
 `.env` is for non-secret Docker Compose interpolation values only. The CLI derives these values from `edge.yml` when possible:
 
 ```text
+BARE_IMAGE_REGISTRY
+BARE_IMAGE_TAG
 BARE_CHANNEL
 BARE_PROJECT_NAME
 PUBLIC_HTTP_PORT
@@ -74,6 +76,15 @@ ADMIN_BIND_ADDRESS
 BARE_COMPOSE_DIR
 BARE_STORAGE_ROOT
 ```
+
+For a homelab registry, initialize or edit `.env` with:
+
+```text
+BARE_IMAGE_REGISTRY=localhost:5000/bare
+BARE_IMAGE_TAG=homelab
+```
+
+Rendered Compose image names use `BARE_IMAGE_REGISTRY/<service>:BARE_IMAGE_TAG` unless a per-service override such as `TARDIGRADE_IMAGE` is set.
 
 Do not put tokens, passwords, API keys, private keys, or TLS keys in `.env`. Validation flags secret-looking keys such as `PORTAL_TOKEN`, `PASSWORD`, `SECRET`, `API_KEY`, and `PRIVATE_KEY`.
 
@@ -86,7 +97,7 @@ Secrets are modeled as files under `/etc/bare-systems/secrets`. Module manifests
 Initialize a local editable project:
 
 ```sh
-bare-systems --project-dir ./tmp-edge init
+bare-systems --project-dir ./tmp-edge init --image-registry localhost:5000/bare --image-tag homelab
 ```
 
 Validate the deployment model:

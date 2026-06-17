@@ -38,7 +38,7 @@ docker compose \
 Implemented runtime commands:
 
 ```sh
-bare-systems --project-dir ./tmp-edge init
+bare-systems --project-dir ./tmp-edge init --image-registry localhost:5000/bare --image-tag homelab
 bare-systems --project-dir ./tmp-edge validate
 bare-systems --project-dir ./tmp-edge config render --write
 bare-systems install

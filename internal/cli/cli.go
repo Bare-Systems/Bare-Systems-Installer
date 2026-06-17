@@ -146,7 +146,8 @@ Usage:
 Commands:
   help                     Show this help text.
   version                  Print CLI version and build metadata.
-  init [--force]           Initialize local deployment files.
+  init [--force] [--image-registry REGISTRY] [--image-tag TAG]
+                           Initialize local deployment files.
   validate                 Validate config and rendered deployment inputs.
   install                  Prepare and install the deployment.
   start                    Start the Compose deployment.
@@ -322,7 +323,9 @@ func (a *App) runValidate(opts globalOptions, stdout io.Writer, stderr io.Writer
 }
 
 type initOptions struct {
-	force bool
+	force         bool
+	imageRegistry string
+	imageTag      string
 }
 
 func (a *App) runInit(args []string, opts globalOptions, stdout io.Writer, stderr io.Writer) int {
@@ -355,6 +358,12 @@ func (a *App) runInit(args []string, opts globalOptions, stdout io.Writer, stder
 	}
 	registry := modules.BuiltInRegistry()
 	env := deploymentconfig.DerivedEnv(deployment)
+	if strings.TrimSpace(initOpts.imageRegistry) != "" {
+		env["BARE_IMAGE_REGISTRY"] = strings.TrimRight(strings.TrimSpace(initOpts.imageRegistry), "/")
+	}
+	if strings.TrimSpace(initOpts.imageTag) != "" {
+		env["BARE_IMAGE_TAG"] = strings.TrimSpace(initOpts.imageTag)
+	}
 	composeYAML, err := compose.Render(deployment, registry, env)
 	if err != nil {
 		return a.writeCommandError("init", apperrors.CodeConfig, err, opts, stdout, stderr)
@@ -407,8 +416,10 @@ func (a *App) parseInitFlags(args []string, stderr io.Writer) (initOptions, bool
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.BoolVar(&initOpts.force, "force", false, "regenerate default files")
+	flags.StringVar(&initOpts.imageRegistry, "image-registry", "", "default image registry/repository prefix")
+	flags.StringVar(&initOpts.imageTag, "image-tag", "", "default image tag")
 	flags.Usage = func() {
-		fmt.Fprintf(stderr, "Usage:\n  %s [global flags] init [--force]\n", a.name)
+		fmt.Fprintf(stderr, "Usage:\n  %s [global flags] init [--force] [--image-registry REGISTRY] [--image-tag TAG]\n", a.name)
 	}
 	if err := flags.Parse(args); err != nil {
 		return initOpts, false
@@ -1186,6 +1197,11 @@ func defaultEnvFile(env deploymentconfig.Environment) []byte {
 	builder.WriteString("# Do not put tokens, passwords, API keys, private keys, or TLS keys here.\n\n")
 	for _, key := range env.Keys() {
 		fmt.Fprintf(&builder, "%s=%s\n", key, env[key])
+	}
+	builder.WriteString("\n")
+	builder.WriteString("# Optional per-service image overrides. Leave commented to use BARE_IMAGE_REGISTRY/BARE_IMAGE_TAG.\n")
+	for _, key := range []string{"TARDIGRADE_IMAGE", "BEARCLAW_WEB_IMAGE", "BEARCLAW_AGENT_IMAGE", "KOALA_IMAGE", "POLAR_IMAGE", "KODIAK_IMAGE", "URSA_IMAGE"} {
+		fmt.Fprintf(&builder, "# %s=\n", key)
 	}
 	return []byte(builder.String())
 }

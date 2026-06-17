@@ -2,7 +2,9 @@ package compose
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/config"
 	"github.com/Bare-Systems/Bare-Systems-Installer/internal/modules"
@@ -100,16 +102,63 @@ func ValidateRendered(data []byte) error {
 	return nil
 }
 
+var composeVariablePattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
+
 func renderService(service modules.Service, env config.Environment) Service {
 	return Service{
-		Image:       service.Image,
+		Image:       resolveImage(service, env),
 		Profiles:    sortedCopy(service.Profiles),
-		Ports:       sortedCopy(service.Ports),
+		Ports:       resolveTemplates(sortedCopy(service.Ports), env),
 		Volumes:     sortedCopy(service.Volumes),
 		Secrets:     sortedCopy(service.Secrets),
 		Environment: selectedEnv(env),
 		Healthcheck: renderHealthcheck(service.Health),
 	}
+}
+
+func resolveImage(service modules.Service, env config.Environment) string {
+	imageKey := imageEnvKey(service.ComposeService)
+	if image := strings.TrimSpace(env[imageKey]); image != "" {
+		return image
+	}
+	registry := strings.TrimRight(strings.TrimSpace(env["BARE_IMAGE_REGISTRY"]), "/")
+	tag := strings.TrimSpace(env["BARE_IMAGE_TAG"])
+	if registry != "" && tag != "" {
+		return registry + "/" + service.ComposeService + ":" + tag
+	}
+	return resolveTemplate(service.Image, env)
+}
+
+func imageEnvKey(serviceName string) string {
+	key := strings.NewReplacer("-", "_", ".", "_").Replace(serviceName)
+	return strings.ToUpper(key) + "_IMAGE"
+}
+
+func resolveTemplates(values []string, env config.Environment) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	resolved := make([]string, 0, len(values))
+	for _, value := range values {
+		resolved = append(resolved, resolveTemplate(value, env))
+	}
+	return resolved
+}
+
+func resolveTemplate(value string, env config.Environment) string {
+	return composeVariablePattern.ReplaceAllStringFunc(value, func(match string) string {
+		parts := composeVariablePattern.FindStringSubmatch(match)
+		if len(parts) == 0 {
+			return match
+		}
+		if envValue := strings.TrimSpace(env[parts[1]]); envValue != "" {
+			return envValue
+		}
+		if len(parts) >= 4 {
+			return parts[3]
+		}
+		return ""
+	})
 }
 
 func renderHealthcheck(health modules.HealthCheck) *Healthcheck {

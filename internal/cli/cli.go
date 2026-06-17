@@ -1200,7 +1200,7 @@ func defaultEnvFile(env deploymentconfig.Environment) []byte {
 	}
 	builder.WriteString("\n")
 	builder.WriteString("# Optional per-service image overrides. Leave commented to use BARE_IMAGE_REGISTRY/BARE_IMAGE_TAG.\n")
-	for _, key := range []string{"TARDIGRADE_IMAGE", "BEARCLAW_WEB_IMAGE", "BEARCLAW_AGENT_IMAGE", "KOALA_IMAGE", "POLAR_IMAGE", "KODIAK_IMAGE", "URSA_IMAGE"} {
+	for _, key := range []string{"BEARCLAW_WEB_IMAGE", "KOALA_ORCHESTRATOR_IMAGE", "KOALA_WORKER_IMAGE", "POLAR_IMAGE", "KODIAK_IMAGE", "URSA_IMAGE"} {
 		fmt.Fprintf(&builder, "# %s=\n", key)
 	}
 	return []byte(builder.String())

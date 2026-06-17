@@ -21,13 +21,16 @@ func TestBuiltInRegistry(t *testing.T) {
 	}
 }
 
-func TestCoreManifestDeclaresSecretsAndConfig(t *testing.T) {
+func TestCoreManifestModelsDockerServicesOnly(t *testing.T) {
 	manifest, ok := BuiltInRegistry().Get("core")
 	if !ok {
 		t.Fatalf("core manifest missing")
 	}
-	if len(manifest.Module.Secrets) == 0 {
-		t.Fatalf("core should declare secrets")
+	if len(manifest.Module.Services) != 1 || manifest.Module.Services[0].ComposeService != "bear-claw-web" {
+		t.Fatalf("core should declare only the Bear Claw Web Compose service: %#v", manifest.Module.Services)
+	}
+	if len(manifest.Module.Secrets) != 0 {
+		t.Fatalf("core Compose services should not declare Tardigrade host secrets")
 	}
 	if len(manifest.Module.Config.Required) == 0 {
 		t.Fatalf("core should declare required config")

@@ -70,8 +70,8 @@ func ParseEnv(data []byte) (Environment, error) {
 func DerivedEnv(deployment Deployment) Environment {
 	env := Environment{
 		"BARE_CHANNEL":        deployment.Spec.Channel,
-		"BARE_IMAGE_REGISTRY": "registry.example.com/bare",
-		"BARE_IMAGE_TAG":      "unspecified",
+		"BARE_IMAGE_REGISTRY": "ghcr.io/bare-systems",
+		"BARE_IMAGE_TAG":      "latest",
 		"BARE_PROJECT_NAME":   deployment.ComposeProjectName(),
 		"ADMIN_BIND_ADDRESS":  deployment.Spec.Networking.AdminBindAddress,
 		"PUBLIC_HTTP_PORT":    strconv.Itoa(deployment.Spec.Networking.PublicHTTPPort),

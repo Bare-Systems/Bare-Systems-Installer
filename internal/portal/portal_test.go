@@ -136,7 +136,7 @@ func TestBuildReportPayloadAndSpoolFailure(t *testing.T) {
 	deployment.Metadata.Customer = "customer-a"
 	now := time.Date(2026, 6, 13, 12, 34, 56, 0, time.UTC)
 	state := edgeruntime.RuntimeState{
-		Containers: []edgeruntime.Container{{Service: "tardigrade", State: "running", Health: "healthy"}},
+		Containers: []edgeruntime.Container{{Service: "bear-claw-web", State: "running", Health: "healthy"}},
 		Summary: edgeruntime.StateSummary{
 			Total:    1,
 			ByState:  map[string]int{"running": 1},
@@ -156,7 +156,7 @@ func TestBuildReportPayloadAndSpoolFailure(t *testing.T) {
 		Identity:         DeviceIdentity{DeviceID: "dev_abc123"},
 		Deployment:       deployment,
 		ValidationResult: deploymentconfig.ValidationResult{EnabledModules: []string{"core"}, Profiles: []string{"core"}},
-		ComposeYAML:      []byte("services:\n  tardigrade: {}\n"),
+		ComposeYAML:      []byte("services:\n  bear-claw-web: {}\n"),
 		RuntimeState:     state,
 		RuntimeError:     errors.New("runtime warning"),
 		HealthReport:     report,
@@ -185,7 +185,7 @@ func TestBuildReportPayloadAndSpoolFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read spool: %v", err)
 	}
-	for _, want := range []string{"dev_abc123", "portal unavailable", "tardigrade"} {
+	for _, want := range []string{"dev_abc123", "portal unavailable", "bear-claw-web"} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("spool missing %q:\n%s", want, string(data))
 		}

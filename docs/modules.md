@@ -2,6 +2,8 @@
 
 Bare Systems modules are declared through module manifests. The CLI uses manifests to map operator intent in `edge.yml` to Compose profiles, services, images, required config, volumes, secrets, and health checks.
 
+Tardigrade is not rendered as a Compose service. It runs as a host binary so it can bind public ports and reverse proxy into the Docker network.
+
 The built-in manifest schema is versioned:
 
 ```yaml
@@ -17,12 +19,26 @@ module:
   profiles:
     - koala
   images:
-    koala-agent:
-      image: ${KOALA_IMAGE:-registry.example.com/bare/koala-agent:unspecified}
+    koala-orchestrator:
+      image: ${KOALA_ORCHESTRATOR_IMAGE:-ghcr.io/bare-systems/koala-orchestrator:latest}
+    koala-worker:
+      image: ${KOALA_WORKER_IMAGE:-ghcr.io/bare-systems/koala-worker:latest}
   services:
-    - name: koala-agent
-      composeService: koala-agent
-      image: ${KOALA_IMAGE:-registry.example.com/bare/koala-agent:unspecified}
+    - name: koala-orchestrator
+      composeService: koala-orchestrator
+      image: ${KOALA_ORCHESTRATOR_IMAGE:-ghcr.io/bare-systems/koala-orchestrator:latest}
+      imageRepository: koala-orchestrator
+      profiles:
+        - koala
+      volumes:
+        - koala-data:/var/lib/bare-systems/koala
+      health:
+        type: exec
+        command: ["CMD", "/app/healthcheck"]
+    - name: koala-worker
+      composeService: koala-worker
+      image: ${KOALA_WORKER_IMAGE:-ghcr.io/bare-systems/koala-worker:latest}
+      imageRepository: koala-worker
       profiles:
         - koala
       volumes:
@@ -46,7 +62,7 @@ The initial registry contains:
 
 | Module | Required | Profile | Purpose |
 | --- | --- | --- | --- |
-| `core` | yes | `core` | Tardigrade reverse proxy, Bear Claw web UI, and Bear Claw agent integration |
+| `core` | yes | `core` | Bear Claw web UI; Tardigrade is managed as a host binary outside Compose |
 | `koala` | no | `koala` | Camera and home security services |
 | `polar` | no | `polar` | Operational monitoring services |
 | `kodiak` | no | `kodiak` | Local orchestration services |
@@ -68,6 +84,7 @@ Validation enforces:
 `bare-systems config render` emits a Compose YAML model from enabled modules. The renderer includes:
 
 - service images
+- image repository names for registry/tag overrides
 - Compose profiles
 - ports
 - volumes

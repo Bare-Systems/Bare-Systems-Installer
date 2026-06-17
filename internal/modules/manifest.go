@@ -38,14 +38,15 @@ type ImageRef struct {
 }
 
 type Service struct {
-	Name           string      `json:"name" yaml:"name"`
-	ComposeService string      `json:"composeService" yaml:"composeService"`
-	Image          string      `json:"image" yaml:"image"`
-	Profiles       []string    `json:"profiles" yaml:"profiles"`
-	Ports          []string    `json:"ports,omitempty" yaml:"ports,omitempty"`
-	Volumes        []string    `json:"volumes,omitempty" yaml:"volumes,omitempty"`
-	Secrets        []string    `json:"secrets,omitempty" yaml:"secrets,omitempty"`
-	Health         HealthCheck `json:"health" yaml:"health"`
+	Name            string      `json:"name" yaml:"name"`
+	ComposeService  string      `json:"composeService" yaml:"composeService"`
+	Image           string      `json:"image" yaml:"image"`
+	ImageRepository string      `json:"imageRepository,omitempty" yaml:"imageRepository,omitempty"`
+	Profiles        []string    `json:"profiles" yaml:"profiles"`
+	Ports           []string    `json:"ports,omitempty" yaml:"ports,omitempty"`
+	Volumes         []string    `json:"volumes,omitempty" yaml:"volumes,omitempty"`
+	Secrets         []string    `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Health          HealthCheck `json:"health" yaml:"health"`
 }
 
 type HealthCheck struct {

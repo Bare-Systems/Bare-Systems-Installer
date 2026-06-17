@@ -14,9 +14,14 @@ func TestRenderDefaultDeployment(t *testing.T) {
 		t.Fatalf("Render returned error: %v", err)
 	}
 	out := string(data)
-	for _, want := range []string{"services:", "tardigrade:", "bearclaw-web:", "bearclaw-agent:", "secrets:", "portal-token:"} {
+	for _, want := range []string{"services:", "bear-claw-web:"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("rendered compose missing %q:\n%s", want, out)
+		}
+	}
+	for _, notWant := range []string{"tardigrade:", "bearclaw-agent:"} {
+		if strings.Contains(out, notWant) {
+			t.Fatalf("rendered compose should not include %q:\n%s", notWant, out)
 		}
 	}
 	if strings.Contains(out, "portal-token: do-not-print") {
@@ -35,8 +40,10 @@ func TestRenderEnabledOptionalModule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render returned error: %v", err)
 	}
-	if !strings.Contains(string(data), "koala-agent:") {
-		t.Fatalf("rendered compose missing koala service:\n%s", string(data))
+	for _, want := range []string{"koala-orchestrator:", "koala-worker:"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("rendered compose missing %q:\n%s", want, string(data))
+		}
 	}
 }
 
@@ -53,13 +60,12 @@ func TestRenderUsesProvidedEnvironment(t *testing.T) {
 	}
 }
 
-func TestRenderResolvesImageRegistryAndPorts(t *testing.T) {
+func TestRenderResolvesImageRegistry(t *testing.T) {
 	deployment := config.DefaultDeployment()
+	deployment.Spec.Modules["koala"] = config.ModuleConfig{Enabled: true}
 	env := config.MergeEnv(config.DerivedEnv(deployment), config.Environment{
 		"BARE_IMAGE_REGISTRY": "localhost:5000/bare",
 		"BARE_IMAGE_TAG":      "homelab",
-		"PUBLIC_HTTP_PORT":    "8080",
-		"PUBLIC_HTTPS_PORT":   "8443",
 	})
 
 	data, err := Render(deployment, modules.BuiltInRegistry(), env)
@@ -68,11 +74,9 @@ func TestRenderResolvesImageRegistryAndPorts(t *testing.T) {
 	}
 	out := string(data)
 	for _, want := range []string{
-		"image: localhost:5000/bare/tardigrade:homelab",
-		"image: localhost:5000/bare/bearclaw-web:homelab",
-		"image: localhost:5000/bare/bearclaw-agent:homelab",
-		"- 8080:80",
-		"- 8443:443",
+		"image: localhost:5000/bare/bear-claw-web:homelab",
+		"image: localhost:5000/bare/koala-orchestrator:homelab",
+		"image: localhost:5000/bare/koala-worker:homelab",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("rendered compose missing %q:\n%s", want, out)
@@ -88,7 +92,7 @@ func TestRenderUsesServiceImageOverride(t *testing.T) {
 	env := config.MergeEnv(config.DerivedEnv(deployment), config.Environment{
 		"BARE_IMAGE_REGISTRY": "localhost:5000/bare",
 		"BARE_IMAGE_TAG":      "homelab",
-		"TARDIGRADE_IMAGE":    "localhost:5000/custom/tardigrade:dev",
+		"BEARCLAW_WEB_IMAGE":  "localhost:5000/custom/bear-claw-web:dev",
 	})
 
 	data, err := Render(deployment, modules.BuiltInRegistry(), env)
@@ -96,11 +100,11 @@ func TestRenderUsesServiceImageOverride(t *testing.T) {
 		t.Fatalf("Render returned error: %v", err)
 	}
 	out := string(data)
-	if !strings.Contains(out, "image: localhost:5000/custom/tardigrade:dev") {
+	if !strings.Contains(out, "image: localhost:5000/custom/bear-claw-web:dev") {
 		t.Fatalf("rendered compose did not use service override:\n%s", out)
 	}
-	if !strings.Contains(out, "image: localhost:5000/bare/bearclaw-web:homelab") {
-		t.Fatalf("rendered compose did not keep base registry for other services:\n%s", out)
+	if strings.Contains(out, "image: localhost:5000/bare/bear-claw-web:homelab") {
+		t.Fatalf("rendered compose used base registry instead of service override:\n%s", out)
 	}
 }
 

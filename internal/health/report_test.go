@@ -24,7 +24,7 @@ func TestEvaluateReportsPassAndManifestHealth(t *testing.T) {
 	if report.HasFailures() {
 		t.Fatalf("expected no failures: %#v", report)
 	}
-	if !hasCheck(report, "manifest-health:tardigrade", StatusPass) {
+	if !hasCheck(report, "manifest-health:bear-claw-web", StatusPass) {
 		t.Fatalf("expected manifest health check to pass: %#v", report.Checks)
 	}
 }
@@ -76,7 +76,7 @@ func (healthyRunner) Run(_ context.Context, command edgeruntime.Command) (edgeru
 		return edgeruntime.Result{Stdout: "Docker Compose version v2\n"}, nil
 	}
 	if strings.Contains(strings.Join(command.Args, " "), "ps --format json") {
-		return edgeruntime.Result{Stdout: `[{"Service":"tardigrade","State":"running","Health":"healthy"},{"Service":"bearclaw-web","State":"running","Health":"healthy"},{"Service":"bearclaw-agent","State":"running","Health":"healthy"}]`}, nil
+		return edgeruntime.Result{Stdout: `[{"Service":"bear-claw-web","State":"running","Health":"healthy"}]`}, nil
 	}
 	return edgeruntime.Result{}, nil
 }

@@ -77,14 +77,23 @@ BARE_COMPOSE_DIR
 BARE_STORAGE_ROOT
 ```
 
-For a homelab registry, initialize or edit `.env` with:
+By default the CLI renders images from GitHub Container Registry:
+
+```text
+BARE_IMAGE_REGISTRY=ghcr.io/bare-systems
+BARE_IMAGE_TAG=latest
+```
+
+GHCR packages must be public for anonymous pulls. If packages remain private, log the edge node in with a token that has `read:packages` before running `install`, `start`, or `update`.
+
+For a temporary local homelab registry, initialize or edit `.env` with:
 
 ```text
 BARE_IMAGE_REGISTRY=localhost:5000/bare
 BARE_IMAGE_TAG=homelab
 ```
 
-Rendered Compose image names use `BARE_IMAGE_REGISTRY/<service>:BARE_IMAGE_TAG` unless a per-service override such as `TARDIGRADE_IMAGE` is set.
+Rendered Compose image names use `BARE_IMAGE_REGISTRY/<imageRepository>:BARE_IMAGE_TAG` unless a per-service override such as `BEARCLAW_WEB_IMAGE`, `KOALA_ORCHESTRATOR_IMAGE`, or `KOALA_WORKER_IMAGE` is set. Tardigrade is not rendered as a Compose image; it runs as a host binary.
 
 Do not put tokens, passwords, API keys, private keys, or TLS keys in `.env`. Validation flags secret-looking keys such as `PORTAL_TOKEN`, `PASSWORD`, `SECRET`, `API_KEY`, and `PRIVATE_KEY`.
 
@@ -97,7 +106,7 @@ Secrets are modeled as files under `/etc/bare-systems/secrets`. Module manifests
 Initialize a local editable project:
 
 ```sh
-bare-systems --project-dir ./tmp-edge init --image-registry localhost:5000/bare --image-tag homelab
+bare-systems --project-dir ./tmp-edge init
 ```
 
 Validate the deployment model:

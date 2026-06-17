@@ -44,17 +44,17 @@ func TestLogsAllowsOptionalService(t *testing.T) {
 	runner := &FakeRunner{}
 	compose := Compose{Runner: runner, ProjectDir: "/tmp/edge/compose", ProjectName: "bare-systems"}
 
-	if _, err := compose.Logs(context.Background(), "tardigrade"); err != nil {
+	if _, err := compose.Logs(context.Background(), "bear-claw-web"); err != nil {
 		t.Fatalf("Logs returned error: %v", err)
 	}
 	got := strings.Join(runner.Commands[0].Args, " ")
-	if !strings.Contains(got, "logs --tail 200 tardigrade") {
+	if !strings.Contains(got, "logs --tail 200 bear-claw-web") {
 		t.Fatalf("args = %s", got)
 	}
 }
 
 func TestParsePSJSON(t *testing.T) {
-	state, err := ParsePSJSON(`[{"ID":"abc","Name":"edge","Service":"tardigrade","State":"running","Health":"healthy"}]`)
+	state, err := ParsePSJSON(`[{"ID":"abc","Name":"edge","Service":"bear-claw-web","State":"running","Health":"healthy"}]`)
 	if err != nil {
 		t.Fatalf("ParsePSJSON returned error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestParsePSJSON(t *testing.T) {
 	if state.Summary.ByState["running"] != 1 {
 		t.Fatalf("ByState = %#v", state.Summary.ByState)
 	}
-	if state.Containers[0].Service != "tardigrade" {
+	if state.Containers[0].Service != "bear-claw-web" {
 		t.Fatalf("Service = %q", state.Containers[0].Service)
 	}
 }

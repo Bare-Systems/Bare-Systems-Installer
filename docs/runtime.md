@@ -2,6 +2,8 @@
 
 Bare Systems runtime behavior is Docker Compose based. The CLI does not replace Docker or supervise individual containers itself.
 
+Tardigrade is outside the Compose graph. It is expected to run as a host binary on the edge node so it can bind public ports and proxy traffic into Docker-managed services.
+
 ## Prerequisites
 
 Runtime commands require:
@@ -38,7 +40,7 @@ docker compose \
 Implemented runtime commands:
 
 ```sh
-bare-systems --project-dir ./tmp-edge init --image-registry localhost:5000/bare --image-tag homelab
+bare-systems --project-dir ./tmp-edge init
 bare-systems --project-dir ./tmp-edge validate
 bare-systems --project-dir ./tmp-edge config render --write
 bare-systems install

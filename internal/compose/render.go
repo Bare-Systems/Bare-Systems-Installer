@@ -117,21 +117,59 @@ func renderService(service modules.Service, env config.Environment) Service {
 }
 
 func resolveImage(service modules.Service, env config.Environment) string {
-	imageKey := imageEnvKey(service.ComposeService)
-	if image := strings.TrimSpace(env[imageKey]); image != "" {
-		return image
+	for _, imageKey := range imageEnvKeys(service) {
+		if image := strings.TrimSpace(env[imageKey]); image != "" {
+			return image
+		}
 	}
 	registry := strings.TrimRight(strings.TrimSpace(env["BARE_IMAGE_REGISTRY"]), "/")
 	tag := strings.TrimSpace(env["BARE_IMAGE_TAG"])
 	if registry != "" && tag != "" {
-		return registry + "/" + service.ComposeService + ":" + tag
+		return registry + "/" + imageRepository(service) + ":" + tag
 	}
 	return resolveTemplate(service.Image, env)
+}
+
+func imageEnvKeys(service modules.Service) []string {
+	keys := []string{}
+	if key := imageTemplateEnvKey(service.Image); key != "" {
+		keys = append(keys, key)
+	}
+	keys = append(keys, imageEnvKey(service.ComposeService))
+	return uniqueStrings(keys)
+}
+
+func imageTemplateEnvKey(image string) string {
+	parts := composeVariablePattern.FindStringSubmatch(image)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[1]
 }
 
 func imageEnvKey(serviceName string) string {
 	key := strings.NewReplacer("-", "_", ".", "_").Replace(serviceName)
 	return strings.ToUpper(key) + "_IMAGE"
+}
+
+func imageRepository(service modules.Service) string {
+	if repository := strings.TrimSpace(service.ImageRepository); repository != "" {
+		return repository
+	}
+	return service.ComposeService
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
+		unique = append(unique, value)
+	}
+	return unique
 }
 
 func resolveTemplates(values []string, env config.Environment) []string {

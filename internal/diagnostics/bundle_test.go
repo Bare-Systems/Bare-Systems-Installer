@@ -51,7 +51,7 @@ func TestCreateBundleRedactsAndTruncates(t *testing.T) {
 	if !strings.Contains(joined, "[TRUNCATED]") {
 		t.Fatalf("bundle missing truncation marker:\n%s", joined)
 	}
-	for _, want := range []string{"manifest.json", "config/compose.rendered.yml", "runtime/compose-ps.json", "health/doctor.json", "logs/tardigrade.log"} {
+	for _, want := range []string{"manifest.json", "config/compose.rendered.yml", "runtime/compose-ps.json", "health/doctor.json", "logs/bear-claw-web.log"} {
 		if _, ok := contents[want]; !ok {
 			t.Fatalf("bundle missing %s; entries=%v", want, keys(contents))
 		}
@@ -118,7 +118,7 @@ func (bundleRunner) Run(_ context.Context, command edgeruntime.Command) (edgerun
 		return edgeruntime.Result{Stdout: "Docker Compose version v2\n"}, nil
 	}
 	if strings.Contains(args, "ps --format json") {
-		return edgeruntime.Result{Stdout: `[{"Service":"tardigrade","State":"running","Health":"healthy"}]`}, nil
+		return edgeruntime.Result{Stdout: `[{"Service":"bear-claw-web","State":"running","Health":"healthy"}]`}, nil
 	}
 	if strings.Contains(args, "logs") {
 		return edgeruntime.Result{Stdout: "very long log line with token=do-not-print\n"}, nil

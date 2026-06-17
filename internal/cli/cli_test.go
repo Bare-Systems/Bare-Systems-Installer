@@ -294,7 +294,7 @@ func TestInitCommandSupportsLocalImageRegistry(t *testing.T) {
 	for _, want := range []string{
 		"BARE_IMAGE_REGISTRY=localhost:5000/bare",
 		"BARE_IMAGE_TAG=homelab",
-		"# TARDIGRADE_IMAGE=",
+		"# BEARCLAW_WEB_IMAGE=",
 	} {
 		if !strings.Contains(string(envData), want) {
 			t.Fatalf(".env missing %q:\n%s", want, string(envData))
@@ -305,9 +305,7 @@ func TestInitCommandSupportsLocalImageRegistry(t *testing.T) {
 		t.Fatalf("read compose: %v", err)
 	}
 	for _, want := range []string{
-		"image: localhost:5000/bare/tardigrade:homelab",
-		"image: localhost:5000/bare/bearclaw-web:homelab",
-		"image: localhost:5000/bare/bearclaw-agent:homelab",
+		"image: localhost:5000/bare/bear-claw-web:homelab",
 	} {
 		if !strings.Contains(string(composeData), want) {
 			t.Fatalf("compose missing %q:\n%s", want, string(composeData))
@@ -326,7 +324,7 @@ func TestConfigRenderCommand(t *testing.T) {
 		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
 	}
 	out := stdout.String()
-	for _, want := range []string{"services:", "tardigrade:", "bearclaw-web:"} {
+	for _, want := range []string{"services:", "bear-claw-web:"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("rendered output missing %q:\n%s", want, out)
 		}
@@ -358,7 +356,7 @@ func TestConfigRenderWriteCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read compose file: %v", err)
 	}
-	for _, want := range []string{"services:", "tardigrade:", "bearclaw-web:"} {
+	for _, want := range []string{"services:", "bear-claw-web:"} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("compose file missing %q:\n%s", want, string(data))
 		}
@@ -442,7 +440,7 @@ func TestStatusJSONExposesRuntimeState(t *testing.T) {
 		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
 	}
 	out := stdout.String()
-	for _, want := range []string{`"command": "status"`, `"total": 3`, `"service": "tardigrade"`} {
+	for _, want := range []string{`"command": "status"`, `"total": 1`, `"service": "bear-claw-web"`} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status JSON missing %q:\n%s", want, out)
 		}
@@ -456,7 +454,7 @@ func TestLogsSupportsOptionalService(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := app.Run([]string{"--project-dir", t.TempDir(), "logs", "tardigrade"}, &stdout, &stderr)
+	code := app.Run([]string{"--project-dir", t.TempDir(), "logs", "bear-claw-web"}, &stdout, &stderr)
 
 	if code != apperrors.ExitOK {
 		t.Fatalf("exit code = %d, want %d; stderr=%q", code, apperrors.ExitOK, stderr.String())
@@ -464,7 +462,7 @@ func TestLogsSupportsOptionalService(t *testing.T) {
 	if !strings.Contains(stdout.String(), "log line") {
 		t.Fatalf("stdout missing logs: %q", stdout.String())
 	}
-	if !runner.sawArgs("logs --tail 200 tardigrade") {
+	if !runner.sawArgs("logs --tail 200 bear-claw-web") {
 		t.Fatalf("logs command did not include service: %#v", runner.commands)
 	}
 }
@@ -482,7 +480,7 @@ func TestDoctorReportsChecks(t *testing.T) {
 		t.Fatalf("exit code = %d, want %d; stderr=%q stdout=%q", code, apperrors.ExitOK, stderr.String(), stdout.String())
 	}
 	out := stdout.String()
-	for _, want := range []string{"PASS config-valid", "PASS docker-cli", "manifest-health:tardigrade"} {
+	for _, want := range []string{"PASS config-valid", "PASS docker-cli", "manifest-health:bear-claw-web"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("doctor output missing %q:\n%s", want, out)
 		}
@@ -630,7 +628,7 @@ func TestReportCommandSendsPortalHeartbeat(t *testing.T) {
 	if !slicesContains(payload.EnabledModules, "core") {
 		t.Fatalf("enabled modules = %#v", payload.EnabledModules)
 	}
-	if payload.ServiceStatus.Summary.Total != 3 {
+	if payload.ServiceStatus.Summary.Total != 1 {
 		t.Fatalf("service summary = %#v", payload.ServiceStatus.Summary)
 	}
 	if payload.HealthSummary.Total == 0 {
@@ -746,7 +744,7 @@ func (r *cliFakeRunner) Run(_ context.Context, command edgeruntime.Command) (edg
 		return edgeruntime.Result{Stdout: "Docker Compose version v2\n"}, nil
 	}
 	if strings.Contains(args, "ps --format json") {
-		return edgeruntime.Result{Stdout: `[{"ID":"abc","Name":"edge-tardigrade-1","Service":"tardigrade","State":"running","Health":"healthy"},{"Service":"bearclaw-web","State":"running","Health":"healthy"},{"Service":"bearclaw-agent","State":"running","Health":"healthy"}]`}, nil
+		return edgeruntime.Result{Stdout: `[{"ID":"abc","Name":"edge-bear-claw-web-1","Service":"bear-claw-web","State":"running","Health":"healthy"}]`}, nil
 	}
 	if strings.Contains(args, "logs --tail 200") {
 		return edgeruntime.Result{Stdout: "log line\n"}, nil

@@ -1,14 +1,12 @@
 package modules
 
-const defaultSecretsDir = "/etc/bare-systems/secrets"
-
 func BuiltInRegistry() Registry {
 	return NewRegistry([]Manifest{
 		coreManifest(),
-		moduleManifest("koala", "Camera and home security services", "KOALA_SITE_ID"),
-		moduleManifest("polar", "Operational monitoring services", "POLAR_SITE_ID"),
-		moduleManifest("kodiak", "Local orchestration services", "KODIAK_SITE_ID"),
-		moduleManifest("ursa", "Security scanning services", "URSA_SITE_ID"),
+		koalaManifest(),
+		singleServiceModuleManifest("polar", "Operational monitoring services", "POLAR_SITE_ID", "POLAR_RETENTION_DAYS", "polar", "POLAR_IMAGE"),
+		singleServiceModuleManifest("kodiak", "Local orchestration services", "KODIAK_SITE_ID", "KODIAK_RETENTION_DAYS", "kodiak-agent", "KODIAK_IMAGE"),
+		singleServiceModuleManifest("ursa", "Security scanning services", "URSA_SITE_ID", "URSA_RETENTION_DAYS", "ursa", "URSA_IMAGE"),
 	})
 }
 
@@ -27,34 +25,16 @@ func coreManifest() Manifest {
 			DefaultEnabled: true,
 			Profiles:       []string{"core"},
 			Images: map[string]ImageRef{
-				"tardigrade":     {Image: "${TARDIGRADE_IMAGE:-registry.example.com/bare/tardigrade:unspecified}"},
-				"bearclaw-web":   {Image: "${BEARCLAW_WEB_IMAGE:-registry.example.com/bare/bearclaw-web:unspecified}"},
-				"bearclaw-agent": {Image: "${BEARCLAW_AGENT_IMAGE:-registry.example.com/bare/bearclaw-agent:unspecified}"},
+				"bear-claw-web": {Image: "${BEARCLAW_WEB_IMAGE:-ghcr.io/bare-systems/bear-claw-web:latest}"},
 			},
 			Services: []Service{
 				{
-					Name:           "tardigrade",
-					ComposeService: "tardigrade",
-					Image:          "${TARDIGRADE_IMAGE:-registry.example.com/bare/tardigrade:unspecified}",
-					Profiles:       []string{"core"},
-					Ports:          []string{"${PUBLIC_HTTP_PORT:-80}:80", "${PUBLIC_HTTPS_PORT:-443}:443"},
-					Secrets:        []string{"tls-cert", "tls-key"},
-					Health:         HealthCheck{Type: "http", URL: "http://localhost/health"},
-				},
-				{
-					Name:           "bearclaw-web",
-					ComposeService: "bearclaw-web",
-					Image:          "${BEARCLAW_WEB_IMAGE:-registry.example.com/bare/bearclaw-web:unspecified}",
-					Profiles:       []string{"core"},
-					Health:         HealthCheck{Type: "http", URL: "http://localhost:8080/health"},
-				},
-				{
-					Name:           "bearclaw-agent",
-					ComposeService: "bearclaw-agent",
-					Image:          "${BEARCLAW_AGENT_IMAGE:-registry.example.com/bare/bearclaw-agent:unspecified}",
-					Profiles:       []string{"core"},
-					Secrets:        []string{"portal-token"},
-					Health:         HealthCheck{Type: "exec", Command: []string{"CMD", "/app/healthcheck"}},
+					Name:            "bear-claw-web",
+					ComposeService:  "bear-claw-web",
+					Image:           "${BEARCLAW_WEB_IMAGE:-ghcr.io/bare-systems/bear-claw-web:latest}",
+					ImageRepository: "bear-claw-web",
+					Profiles:        []string{"core"},
+					Health:          HealthCheck{Type: "http", URL: "http://localhost:8080/health"},
 				},
 			},
 			Config: ConfigContract{
@@ -62,19 +42,61 @@ func coreManifest() Manifest {
 				Optional: []string{"ADMIN_BIND_ADDRESS"},
 			},
 			Ports:   []string{"80", "443"},
-			Volumes: []string{"bare-state"},
-			Secrets: []Secret{
-				{Name: "portal-token", File: defaultSecretsDir + "/portal-token"},
-				{Name: "tls-cert", File: defaultSecretsDir + "/tls-cert"},
-				{Name: "tls-key", File: defaultSecretsDir + "/tls-key"},
-			},
+			Secrets: []Secret{},
 		},
 	}
 }
 
-func moduleManifest(id string, description string, requiredConfig string) Manifest {
-	serviceName := id + "-agent"
-	image := "${" + upperEnv(id) + "_IMAGE:-registry.example.com/bare/" + serviceName + ":unspecified}"
+func koalaManifest() Manifest {
+	return Manifest{
+		APIVersion: APIVersion,
+		Kind:       Kind,
+		Metadata: Metadata{
+			Name:        "koala",
+			Version:     1,
+			Description: "Camera and home security services",
+		},
+		Module: Module{
+			ID:             "koala",
+			Required:       false,
+			DefaultEnabled: false,
+			Profiles:       []string{"koala"},
+			Images: map[string]ImageRef{
+				"koala-orchestrator": {Image: "${KOALA_ORCHESTRATOR_IMAGE:-ghcr.io/bare-systems/koala-orchestrator:latest}"},
+				"koala-worker":       {Image: "${KOALA_WORKER_IMAGE:-ghcr.io/bare-systems/koala-worker:latest}"},
+			},
+			Services: []Service{
+				{
+					Name:            "koala-orchestrator",
+					ComposeService:  "koala-orchestrator",
+					Image:           "${KOALA_ORCHESTRATOR_IMAGE:-ghcr.io/bare-systems/koala-orchestrator:latest}",
+					ImageRepository: "koala-orchestrator",
+					Profiles:        []string{"koala"},
+					Volumes:         []string{"koala-data:/var/lib/bare-systems/koala"},
+					Health:          HealthCheck{Type: "exec", Command: []string{"CMD", "/app/healthcheck"}},
+				},
+				{
+					Name:            "koala-worker",
+					ComposeService:  "koala-worker",
+					Image:           "${KOALA_WORKER_IMAGE:-ghcr.io/bare-systems/koala-worker:latest}",
+					ImageRepository: "koala-worker",
+					Profiles:        []string{"koala"},
+					Volumes:         []string{"koala-data:/var/lib/bare-systems/koala"},
+					Health:          HealthCheck{Type: "exec", Command: []string{"CMD", "/app/healthcheck"}},
+				},
+			},
+			Config: ConfigContract{
+				Required: []string{"KOALA_SITE_ID"},
+				Optional: []string{"KOALA_RETENTION_DAYS"},
+			},
+			Volumes: []string{"koala-data"},
+			Secrets: []Secret{},
+		},
+	}
+}
+
+func singleServiceModuleManifest(id string, description string, requiredConfig string, optionalConfig string, serviceName string, imageOverrideKey string) Manifest {
+	image := "${" + imageOverrideKey + ":-ghcr.io/bare-systems/" + serviceName + ":latest}"
 	return Manifest{
 		APIVersion: APIVersion,
 		Kind:       Kind,
@@ -93,35 +115,21 @@ func moduleManifest(id string, description string, requiredConfig string) Manife
 			},
 			Services: []Service{
 				{
-					Name:           serviceName,
-					ComposeService: serviceName,
-					Image:          image,
-					Profiles:       []string{id},
-					Volumes:        []string{id + "-data:/var/lib/bare-systems/" + id},
-					Health:         HealthCheck{Type: "exec", Command: []string{"CMD", "/app/healthcheck"}},
+					Name:            serviceName,
+					ComposeService:  serviceName,
+					Image:           image,
+					ImageRepository: serviceName,
+					Profiles:        []string{id},
+					Volumes:         []string{id + "-data:/var/lib/bare-systems/" + id},
+					Health:          HealthCheck{Type: "exec", Command: []string{"CMD", "/app/healthcheck"}},
 				},
 			},
 			Config: ConfigContract{
 				Required: []string{requiredConfig},
-				Optional: []string{upperEnv(id) + "_RETENTION_DAYS"},
+				Optional: []string{optionalConfig},
 			},
 			Volumes: []string{id + "-data"},
 			Secrets: []Secret{},
 		},
-	}
-}
-
-func upperEnv(id string) string {
-	switch id {
-	case "koala":
-		return "KOALA"
-	case "polar":
-		return "POLAR"
-	case "kodiak":
-		return "KODIAK"
-	case "ursa":
-		return "URSA"
-	default:
-		return "BARE"
 	}
 }

@@ -32,9 +32,9 @@ func RenderSystemdUnit(options ServiceOptions) string {
 	if binaryPath == "" {
 		binaryPath = "/usr/bin/bare-systems"
 	}
-	projectDir := options.ProjectDir
-	if projectDir == "" {
-		projectDir = "/opt/bare-systems"
+	projectDirArg := ""
+	if strings.TrimSpace(options.ProjectDir) != "" {
+		projectDirArg = " --project-dir " + strings.TrimSpace(options.ProjectDir)
 	}
 
 	return fmt.Sprintf(`[Unit]
@@ -46,13 +46,13 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=%s --project-dir %s start
-ExecStop=%s --project-dir %s stop
-ExecReload=%s --project-dir %s restart
+ExecStart=%s%s start
+ExecStop=%s%s stop
+ExecReload=%s%s restart
 
 [Install]
 WantedBy=multi-user.target
-`, binaryPath, projectDir, binaryPath, projectDir, binaryPath, projectDir)
+`, binaryPath, projectDirArg, binaryPath, projectDirArg, binaryPath, projectDirArg)
 }
 
 func InstallSystemdService(ctx context.Context, runner Runner, options ServiceOptions) (ServiceResult, error) {

@@ -9,12 +9,24 @@ import (
 )
 
 func TestRenderSystemdUnitStartsComposeOnBoot(t *testing.T) {
-	unit := RenderSystemdUnit(ServiceOptions{BinaryPath: "/usr/bin/bare-systems", ProjectDir: "/opt/bare-systems"})
+	unit := RenderSystemdUnit(ServiceOptions{BinaryPath: "/usr/bin/bare-systems"})
 	for _, want := range []string{
 		"WantedBy=multi-user.target",
 		"After=docker.service network-online.target",
-		"ExecStart=/usr/bin/bare-systems --project-dir /opt/bare-systems start",
-		"ExecStop=/usr/bin/bare-systems --project-dir /opt/bare-systems stop",
+		"ExecStart=/usr/bin/bare-systems start",
+		"ExecStop=/usr/bin/bare-systems stop",
+	} {
+		if !strings.Contains(unit, want) {
+			t.Fatalf("unit missing %q:\n%s", want, unit)
+		}
+	}
+}
+
+func TestRenderSystemdUnitPreservesExplicitProjectDir(t *testing.T) {
+	unit := RenderSystemdUnit(ServiceOptions{BinaryPath: "/usr/bin/bare-systems", ProjectDir: "/tmp/edge"})
+	for _, want := range []string{
+		"ExecStart=/usr/bin/bare-systems --project-dir /tmp/edge start",
+		"ExecStop=/usr/bin/bare-systems --project-dir /tmp/edge stop",
 	} {
 		if !strings.Contains(unit, want) {
 			t.Fatalf("unit missing %q:\n%s", want, unit)

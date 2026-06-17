@@ -95,10 +95,10 @@ Mappings:
 `bare-systems service install` writes `bare-systems-edge.service` on Linux/systemd hosts. The unit is oneshot with `RemainAfterExit=yes` and starts the Compose deployment at boot:
 
 ```ini
-ExecStart=/usr/bin/bare-systems --project-dir /opt/bare-systems start
-ExecStop=/usr/bin/bare-systems --project-dir /opt/bare-systems stop
-ExecReload=/usr/bin/bare-systems --project-dir /opt/bare-systems restart
+ExecStart=/usr/bin/bare-systems start
+ExecStop=/usr/bin/bare-systems stop
+ExecReload=/usr/bin/bare-systems restart
 WantedBy=multi-user.target
 ```
 
-Install and uninstall are idempotent. Running service management on non-Linux hosts returns a prerequisite error.
+Install and uninstall are idempotent. The default unit relies on `/etc/bare-systems/edge.yml`, `/etc/bare-systems/.env`, and `/opt/bare-systems`. Running service management on non-Linux hosts returns a prerequisite error.

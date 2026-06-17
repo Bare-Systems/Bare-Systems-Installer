@@ -872,15 +872,15 @@ func (a *App) runServiceCommand(action string, args []string, opts globalOptions
 	if len(args) > 0 {
 		return a.writeUsageError("service "+action+" "+strings.Join(args, " "), opts, stdout, stderr)
 	}
-	ctx, err := a.loadDeploymentContext(opts)
-	if err != nil {
+	if _, err := a.loadDeploymentContext(opts); err != nil {
 		return a.writeCommandError("service "+action, apperrors.CodeConfig, err, opts, stdout, stderr)
 	}
 
 	options := edgeruntime.ServiceOptions{
-		ProjectDir: ctx.deployment.Spec.Storage.Root,
+		ProjectDir: opts.projectDir,
 	}
 	var result edgeruntime.ServiceResult
+	var err error
 	switch action {
 	case "install":
 		result, err = edgeruntime.InstallSystemdService(context.Background(), a.runner, options)

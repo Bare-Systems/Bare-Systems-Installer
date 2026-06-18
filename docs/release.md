@@ -23,6 +23,7 @@ Tagged releases publish:
 - `.deb` packages for Linux amd64 and arm64
 - `.rpm` packages for Linux amd64 and arm64
 - `checksums.txt`
+- `install.sh`
 - GitHub artifact attestations for release artifacts
 
 Archives include the `bare-systems` binary plus the README and release/runtime docs. Linux packages install the binary to `/usr/bin/bare-systems`.
@@ -90,11 +91,17 @@ gh attestation verify bare-systems_linux_amd64.tar.gz \
 
 The CI workflow builds Linux and macOS binaries for amd64 and arm64 on every push and pull request.
 
-The release workflow runs when a `v*` tag is pushed:
+The release workflow runs when a `v*` tag is pushed, or by manual dispatch with a `version` input:
+
+```sh
+gh workflow run release.yml --ref main -f version=v0.1.0
+```
+
+For manual dispatch, the workflow creates a local release tag for GoReleaser and publishes that tag through the GitHub Release API. For tag pushes, the pushed tag is used directly.
 
 1. Run the Go test suite.
 2. Build release binaries with version, commit, and build date metadata.
-3. Publish archives, `.deb`, `.rpm`, and `checksums.txt` through GoReleaser.
+3. Publish archives, `.deb`, `.rpm`, `checksums.txt`, and `install.sh` through GoReleaser.
 4. Publish GitHub artifact attestations for the files in `dist/`.
 
 ## Homebrew

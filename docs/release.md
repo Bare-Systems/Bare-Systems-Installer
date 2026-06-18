@@ -89,7 +89,7 @@ The release workflow runs when a `v*` tag is pushed, or by manual dispatch with 
 gh workflow run release.yml --ref main -f version=v0.1.0
 ```
 
-For manual dispatch, the workflow creates a local release tag for GoReleaser and publishes that tag through the GitHub Release API. For tag pushes, the pushed tag is used directly.
+For manual dispatch, the workflow creates and pushes the requested release tag before GoReleaser runs. For tag pushes, the pushed tag is used directly.
 
 1. Run the Go test suite.
 2. Build release binaries with version, commit, and build date metadata.

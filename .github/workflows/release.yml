@@ -48,7 +48,7 @@ jobs:
 
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Create local release tag for manual dispatch
+      - name: Create release tag for manual dispatch
         if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -56,17 +56,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          current_sha="$(git rev-parse HEAD)"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists" >&2
             exit 1
           fi
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists" >&2
-            exit 1
+            git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
+            tagged_sha="$(git rev-parse "$TAG^{}")"
+            if [ "$tagged_sha" != "$current_sha" ]; then
+              echo "Tag $TAG already exists at $tagged_sha, not $current_sha" >&2
+              exit 1
+            fi
+            echo "Tag $TAG already points at $current_sha"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "refs/tags/$TAG"
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Release $TAG"
 
       - name: Run tests
         run: go test ./...

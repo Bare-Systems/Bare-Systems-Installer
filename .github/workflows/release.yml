@@ -13,8 +13,6 @@ on:
 
 permissions:
   contents: write
-  id-token: write
-  attestations: write
 
 jobs:
   release:
@@ -81,8 +79,3 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Attest release artifacts
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: dist/*

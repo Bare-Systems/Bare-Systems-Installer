@@ -1,6 +1,6 @@
 # Release And Distribution
 
-Bare Systems Installer is distributed as a verifiable GitHub Release surface with archives, checksums, Linux packages, artifact attestations, and a checksum-verifying install script. Windows is not a supported edge runtime in the first release milestone.
+Bare Systems Installer is distributed as a verifiable GitHub Release surface with archives, checksums, Linux packages, and a checksum-verifying install script. Windows is not a supported edge runtime in the first release milestone.
 
 ## Release Channels
 
@@ -24,7 +24,6 @@ Tagged releases publish:
 - `.rpm` packages for Linux amd64 and arm64
 - `checksums.txt`
 - `install.sh`
-- GitHub artifact attestations for release artifacts
 
 Archives include the `bare-systems` binary plus the README and release/runtime docs. Linux packages install the binary to `/usr/bin/bare-systems`.
 
@@ -61,7 +60,7 @@ BARE_SYSTEMS_SKIP_TARDIGRADE=1 sh scripts/install.sh
 Install a specific Tardigrade release or override the temporary hard-coded asset:
 
 ```sh
-BARE_SYSTEMS_TARDIGRADE_VERSION=v0.1.0 \
+BARE_SYSTEMS_TARDIGRADE_VERSION=v0.4.4 \
 BARE_SYSTEMS_TARDIGRADE_ASSET=tardigrade-linux-x86_64.tar.gz \
   sh scripts/install.sh
 ```
@@ -80,13 +79,6 @@ grep ' bare-systems_linux_amd64.tar.gz$' checksums.txt | sha256sum -c -
 
 On macOS, replace `sha256sum -c -` with `shasum -a 256 -c -`.
 
-GitHub artifact attestations are published by the release workflow. Operators can verify provenance with the GitHub CLI:
-
-```sh
-gh attestation verify bare-systems_linux_amd64.tar.gz \
-  --repo Bare-Systems/Bare-Systems-Installer
-```
-
 ## Release Workflow
 
 The CI workflow builds Linux and macOS binaries for amd64 and arm64 on every push and pull request.
@@ -102,7 +94,6 @@ For manual dispatch, the workflow creates a local release tag for GoReleaser and
 1. Run the Go test suite.
 2. Build release binaries with version, commit, and build date metadata.
 3. Publish archives, `.deb`, `.rpm`, `checksums.txt`, and `install.sh` through GoReleaser.
-4. Publish GitHub artifact attestations for the files in `dist/`.
 
 ## Homebrew
 

@@ -19,13 +19,18 @@ type Model struct {
 }
 
 type Service struct {
-	Image       string            `yaml:"image"`
-	Profiles    []string          `yaml:"profiles,omitempty"`
-	Ports       []string          `yaml:"ports,omitempty"`
-	Volumes     []string          `yaml:"volumes,omitempty"`
-	Secrets     []string          `yaml:"secrets,omitempty"`
-	Environment map[string]string `yaml:"environment,omitempty"`
-	Healthcheck *Healthcheck      `yaml:"healthcheck,omitempty"`
+	Image       string               `yaml:"image"`
+	Profiles    []string             `yaml:"profiles,omitempty"`
+	Ports       []string             `yaml:"ports,omitempty"`
+	Volumes     []string             `yaml:"volumes,omitempty"`
+	Secrets     []string             `yaml:"secrets,omitempty"`
+	DependsOn   map[string]DependsOn `yaml:"depends_on,omitempty"`
+	Environment map[string]string    `yaml:"environment,omitempty"`
+	Healthcheck *Healthcheck         `yaml:"healthcheck,omitempty"`
+}
+
+type DependsOn struct {
+	Condition string `yaml:"condition,omitempty"`
 }
 
 type Healthcheck struct {
@@ -108,6 +113,14 @@ func renderService(service modules.Service, env config.Environment) Service {
 	environment := selectedEnv(env)
 	if service.ComposeService == "bear-claw-web" {
 		environment["SECRET_KEY_BASE_DUMMY"] = "1"
+		environment["DATABASE_URL"] = "postgres://bare@bear-claw-db:5432/bearclaw_production"
+	}
+	if service.ComposeService == "bear-claw-db" {
+		environment = map[string]string{
+			"POSTGRES_DB":               "bearclaw_production",
+			"POSTGRES_USER":             "bare",
+			"POSTGRES_HOST_AUTH_METHOD": "trust",
+		}
 	}
 	return Service{
 		Image:       resolveImage(service, env),
@@ -115,9 +128,21 @@ func renderService(service modules.Service, env config.Environment) Service {
 		Ports:       resolveTemplates(sortedCopy(service.Ports), env),
 		Volumes:     sortedCopy(service.Volumes),
 		Secrets:     sortedCopy(service.Secrets),
+		DependsOn:   renderDependsOn(service.DependsOn),
 		Environment: environment,
 		Healthcheck: renderHealthcheck(service.Health),
 	}
+}
+
+func renderDependsOn(dependsOn []string) map[string]DependsOn {
+	if len(dependsOn) == 0 {
+		return nil
+	}
+	rendered := map[string]DependsOn{}
+	for _, service := range sortedCopy(dependsOn) {
+		rendered[service] = DependsOn{Condition: "service_healthy"}
+	}
+	return rendered
 }
 
 func resolveImage(service modules.Service, env config.Environment) string {

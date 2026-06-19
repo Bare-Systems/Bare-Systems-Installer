@@ -26,8 +26,17 @@ func coreManifest() Manifest {
 			Profiles:       []string{"core"},
 			Images: map[string]ImageRef{
 				"bear-claw-web": {Image: "${BEARCLAW_WEB_IMAGE:-ghcr.io/bare-systems/bear-claw-web:latest}"},
+				"bear-claw-db":  {Image: "postgres:16"},
 			},
 			Services: []Service{
+				{
+					Name:           "bear-claw-db",
+					ComposeService: "bear-claw-db",
+					Image:          "postgres:16",
+					Profiles:       []string{"core"},
+					Volumes:        []string{"bearclaw-db:/var/lib/postgresql/data"},
+					Health:         HealthCheck{Type: "exec", Command: []string{"CMD-SHELL", "pg_isready -U bare -d bearclaw_production"}},
+				},
 				{
 					Name:            "bear-claw-web",
 					ComposeService:  "bear-claw-web",
@@ -35,6 +44,7 @@ func coreManifest() Manifest {
 					ImageRepository: "bear-claw-web",
 					Profiles:        []string{"core"},
 					Ports:           []string{"${BEARCLAW_WEB_BIND_ADDRESS:-127.0.0.1}:${BEARCLAW_WEB_PORT:-8080}:80"},
+					DependsOn:       []string{"bear-claw-db"},
 					Health:          HealthCheck{Type: "http", URL: "http://localhost/up"},
 				},
 			},
@@ -43,6 +53,7 @@ func coreManifest() Manifest {
 				Optional: []string{"ADMIN_BIND_ADDRESS", "BEARCLAW_WEB_BIND_ADDRESS", "BEARCLAW_WEB_PORT"},
 			},
 			Ports:   []string{"80", "443"},
+			Volumes: []string{"bearclaw-db"},
 			Secrets: []Secret{},
 		},
 	}

@@ -14,7 +14,18 @@ func TestRenderDefaultDeployment(t *testing.T) {
 		t.Fatalf("Render returned error: %v", err)
 	}
 	out := string(data)
-	for _, want := range []string{"services:", "bear-claw-web:", "127.0.0.1:8080:80", "http://localhost/up", "SECRET_KEY_BASE_DUMMY: \"1\""} {
+	for _, want := range []string{
+		"services:",
+		"bear-claw-db:",
+		"bear-claw-web:",
+		"127.0.0.1:8080:80",
+		"http://localhost/up",
+		"SECRET_KEY_BASE_DUMMY: \"1\"",
+		"DATABASE_URL: postgres://bare@bear-claw-db:5432/bearclaw_production",
+		"POSTGRES_HOST_AUTH_METHOD: trust",
+		"condition: service_healthy",
+		"bearclaw-db:/var/lib/postgresql/data",
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("rendered compose missing %q:\n%s", want, out)
 		}

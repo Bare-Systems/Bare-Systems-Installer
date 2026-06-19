@@ -46,6 +46,7 @@ type Service struct {
 	Ports           []string    `json:"ports,omitempty" yaml:"ports,omitempty"`
 	Volumes         []string    `json:"volumes,omitempty" yaml:"volumes,omitempty"`
 	Secrets         []string    `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	DependsOn       []string    `json:"dependsOn,omitempty" yaml:"dependsOn,omitempty"`
 	Health          HealthCheck `json:"health" yaml:"health"`
 }
 

@@ -26,8 +26,11 @@ func TestCoreManifestModelsDockerServicesOnly(t *testing.T) {
 	if !ok {
 		t.Fatalf("core manifest missing")
 	}
-	if len(manifest.Module.Services) != 1 || manifest.Module.Services[0].ComposeService != "bear-claw-web" {
-		t.Fatalf("core should declare only the Bear Claw Web Compose service: %#v", manifest.Module.Services)
+	if len(manifest.Module.Services) != 2 {
+		t.Fatalf("core should declare Bear Claw Web and Postgres services: %#v", manifest.Module.Services)
+	}
+	if manifest.Module.Services[0].ComposeService != "bear-claw-db" || manifest.Module.Services[1].ComposeService != "bear-claw-web" {
+		t.Fatalf("core service order = %#v, want db then web", manifest.Module.Services)
 	}
 	if len(manifest.Module.Secrets) != 0 {
 		t.Fatalf("core Compose services should not declare Tardigrade host secrets")

@@ -105,13 +105,17 @@ func ValidateRendered(data []byte) error {
 var composeVariablePattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
 
 func renderService(service modules.Service, env config.Environment) Service {
+	environment := selectedEnv(env)
+	if service.ComposeService == "bear-claw-web" {
+		environment["SECRET_KEY_BASE_DUMMY"] = "1"
+	}
 	return Service{
 		Image:       resolveImage(service, env),
 		Profiles:    sortedCopy(service.Profiles),
 		Ports:       resolveTemplates(sortedCopy(service.Ports), env),
 		Volumes:     sortedCopy(service.Volumes),
 		Secrets:     sortedCopy(service.Secrets),
-		Environment: selectedEnv(env),
+		Environment: environment,
 		Healthcheck: renderHealthcheck(service.Health),
 	}
 }

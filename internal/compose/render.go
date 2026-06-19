@@ -151,6 +151,9 @@ func resolveImage(service modules.Service, env config.Environment) string {
 			return image
 		}
 	}
+	if service.ImageRepository == "" && imageTemplateEnvKey(service.Image) == "" {
+		return resolveTemplate(service.Image, env)
+	}
 	registry := strings.TrimRight(strings.TrimSpace(env["BARE_IMAGE_REGISTRY"]), "/")
 	tag := strings.TrimSpace(env["BARE_IMAGE_TAG"])
 	if registry != "" && tag != "" {

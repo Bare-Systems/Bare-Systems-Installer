@@ -104,6 +104,12 @@ BEARCLAW_WEB_BIND_ADDRESS=127.0.0.1
 BEARCLAW_WEB_PORT=8080
 ```
 
+`TARDIGRADE_SERVER_NAMES` controls the server names accepted by the generated Tardigrade reverse proxy config. Include the LAN IP or hostname when health checks or users access the device through that address:
+
+```text
+TARDIGRADE_SERVER_NAMES='localhost 127.0.0.1 192.168.86.53'
+```
+
 Do not put tokens, passwords, API keys, private keys, or TLS keys in `.env`. Validation flags secret-looking keys such as `PORTAL_TOKEN`, `PASSWORD`, `SECRET`, `API_KEY`, and `PRIVATE_KEY`.
 
 ## Secrets

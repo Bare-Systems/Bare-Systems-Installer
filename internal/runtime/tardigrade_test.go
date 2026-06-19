@@ -17,6 +17,7 @@ func TestRenderTardigradeConfig(t *testing.T) {
 	for _, want := range []string{
 		"pid /tmp/tardigrade.pid;",
 		"listen 8088;",
+		"server_name localhost 127.0.0.1;",
 		"root /srv/bare/public;",
 		"proxy_pass http://127.0.0.1:8080/up;",
 		"proxy_pass http://127.0.0.1:8080;",
@@ -24,6 +25,25 @@ func TestRenderTardigradeConfig(t *testing.T) {
 		if !strings.Contains(config, want) {
 			t.Fatalf("rendered config missing %q:\n%s", want, config)
 		}
+	}
+}
+
+func TestRenderTardigradeConfigUsesServerNames(t *testing.T) {
+	config := RenderTardigradeConfig(TardigradeConfigOptions{
+		ServerNames: []string{"localhost", "127.0.0.1", "192.168.86.53"},
+	})
+
+	if !strings.Contains(config, "server_name localhost 127.0.0.1 192.168.86.53;") {
+		t.Fatalf("rendered config missing server names:\n%s", config)
+	}
+}
+
+func TestTardigradeServerNamesParsesAndSanitizes(t *testing.T) {
+	names := TardigradeServerNames("localhost, 127.0.0.1 192.168.86.53 bad;name localhost")
+	got := strings.Join(names, " ")
+	want := "localhost 127.0.0.1 192.168.86.53"
+	if got != want {
+		t.Fatalf("TardigradeServerNames() = %q, want %q", got, want)
 	}
 }
 

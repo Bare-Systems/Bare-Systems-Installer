@@ -1302,6 +1302,7 @@ func tardigradeConfigOptions(deployment deploymentconfig.Deployment, env deploym
 		PidFile:     edgeruntime.TardigradePidFile(projectRoot),
 		PublicDir:   edgeruntime.TardigradePublicDir(projectRoot),
 		UpstreamURL: edgeruntime.TardigradeUpstreamURL(env["BEARCLAW_WEB_BIND_ADDRESS"], env["BEARCLAW_WEB_PORT"]),
+		ServerNames: edgeruntime.TardigradeServerNames(env["TARDIGRADE_SERVER_NAMES"]),
 	}
 }
 

@@ -48,6 +48,12 @@ Runtime artifact writes also generate:
 
 The generated Tardigrade config listens on `PUBLIC_HTTP_PORT` and proxies to Bear Claw Web through the host loopback port rendered into Compose. By default Bear Claw Web is published as `127.0.0.1:8080:80`, and Tardigrade proxies to `http://127.0.0.1:8080`.
 
+Tardigrade routes by the HTTP `Host` header. The generated config accepts `localhost` and `127.0.0.1` by default. Set `TARDIGRADE_SERVER_NAMES` in `/etc/bare-systems/.env` to add LAN IPs or hostnames that should resolve to this edge host:
+
+```env
+TARDIGRADE_SERVER_NAMES='localhost 127.0.0.1 192.168.86.53'
+```
+
 The install script installs the Tardigrade CLI before runtime commands are used. Runtime commands do not download Tardigrade.
 
 ## Commands

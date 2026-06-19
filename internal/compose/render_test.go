@@ -20,7 +20,7 @@ func TestRenderDefaultDeployment(t *testing.T) {
 		"bear-claw-web:",
 		"image: postgres:16",
 		"127.0.0.1:8080:80",
-		"http://localhost/up",
+		"curl -fsS http://localhost/up >/dev/null",
 		"SECRET_KEY_BASE_DUMMY: \"1\"",
 		"DATABASE_URL: postgres://bare@bear-claw-db:5432/bearclaw_production",
 		"POSTGRES_HOST_AUTH_METHOD: trust",

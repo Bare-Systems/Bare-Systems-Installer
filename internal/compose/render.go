@@ -235,7 +235,7 @@ func renderHealthcheck(health modules.HealthCheck) *Healthcheck {
 	switch health.Type {
 	case "http":
 		return &Healthcheck{
-			Test:     []string{"CMD-SHELL", "wget -qO- " + health.URL + " >/dev/null"},
+			Test:     []string{"CMD-SHELL", "curl -fsS " + health.URL + " >/dev/null"},
 			Interval: "30s",
 			Timeout:  "5s",
 			Retries:  3,

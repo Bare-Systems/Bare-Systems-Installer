@@ -48,63 +48,37 @@ func TestTardigradeServerNamesParsesAndSanitizes(t *testing.T) {
 }
 
 func TestTardigradeStartOrReloadStartsWhenStopped(t *testing.T) {
-	runner := &FakeRunner{
-		Results: map[string]FakeResult{
-			"tardigrade status -c /tmp/tardigrade.conf": {Stdout: "status: stopped\n"},
-		},
-	}
+	runner := &FakeRunner{}
 	proxy := Tardigrade{Runner: runner, ConfigFile: "/tmp/tardigrade.conf"}
 
 	if _, err := proxy.StartOrReload(context.Background()); err != nil {
 		t.Fatalf("StartOrReload returned error: %v", err)
 	}
 
-	assertRuntimeCommand(t, runner.Commands, "tardigrade status -c /tmp/tardigrade.conf")
+	assertRuntimeCommand(t, runner.Commands, "tardigrade stop -c /tmp/tardigrade.conf")
+	assertRuntimeCommand(t, runner.Commands, "pkill -f tardigrade run -c /tmp/tardigrade.conf --daemonized")
 	assertRuntimeCommand(t, runner.Commands, "tardigrade run -c /tmp/tardigrade.conf --daemon")
 }
 
-func TestTardigradeStartOrReloadReloadsWhenRunning(t *testing.T) {
-	runner := &FakeRunner{
-		Results: map[string]FakeResult{
-			"tardigrade status -c /tmp/tardigrade.conf": {Stdout: "status: running\n"},
-		},
-	}
+func TestTardigradeStartOrReloadDoesNotUseStatusText(t *testing.T) {
+	runner := &FakeRunner{}
 	proxy := Tardigrade{Runner: runner, ConfigFile: "/tmp/tardigrade.conf"}
 
 	if _, err := proxy.StartOrReload(context.Background()); err != nil {
 		t.Fatalf("StartOrReload returned error: %v", err)
 	}
 
-	assertRuntimeCommand(t, runner.Commands, "tardigrade reload -c /tmp/tardigrade.conf")
 	for _, command := range runner.Commands {
-		if command.String() == "tardigrade run -c /tmp/tardigrade.conf --daemon" {
-			t.Fatalf("running proxy should reload, not start: %#v", runner.Commands)
+		if command.String() == "tardigrade status -c /tmp/tardigrade.conf" {
+			t.Fatalf("start should not depend on Tardigrade status text: %#v", runner.Commands)
 		}
 	}
 }
 
-func TestTardigradeStopIfRunningSkipsWhenStopped(t *testing.T) {
+func TestTardigradeStopIfRunningCleansDaemonizedProcesses(t *testing.T) {
 	runner := &FakeRunner{
 		Results: map[string]FakeResult{
-			"tardigrade status -c /tmp/tardigrade.conf": {Stdout: "status: stopped\n"},
-		},
-	}
-	proxy := Tardigrade{Runner: runner, ConfigFile: "/tmp/tardigrade.conf"}
-
-	if _, err := proxy.StopIfRunning(context.Background()); err != nil {
-		t.Fatalf("StopIfRunning returned error: %v", err)
-	}
-
-	if len(runner.Commands) != 1 {
-		t.Fatalf("expected only status command, got %#v", runner.Commands)
-	}
-	assertRuntimeCommand(t, runner.Commands, "tardigrade status -c /tmp/tardigrade.conf")
-}
-
-func TestTardigradeStopIfRunningStopsWhenRunning(t *testing.T) {
-	runner := &FakeRunner{
-		Results: map[string]FakeResult{
-			"tardigrade status -c /tmp/tardigrade.conf": {Stdout: "status: running\n"},
+			"tardigrade stop -c /tmp/tardigrade.conf": {Stdout: "status: stopped\n"},
 		},
 	}
 	proxy := Tardigrade{Runner: runner, ConfigFile: "/tmp/tardigrade.conf"}
@@ -114,6 +88,23 @@ func TestTardigradeStopIfRunningStopsWhenRunning(t *testing.T) {
 	}
 
 	assertRuntimeCommand(t, runner.Commands, "tardigrade stop -c /tmp/tardigrade.conf")
+	assertRuntimeCommand(t, runner.Commands, "pkill -f tardigrade run -c /tmp/tardigrade.conf --daemonized")
+}
+
+func TestTardigradeStopIfRunningStopsWhenRunning(t *testing.T) {
+	runner := &FakeRunner{
+		Results: map[string]FakeResult{
+			"tardigrade stop -c /tmp/tardigrade.conf": {Stdout: "status: running\n"},
+		},
+	}
+	proxy := Tardigrade{Runner: runner, ConfigFile: "/tmp/tardigrade.conf"}
+
+	if _, err := proxy.StopIfRunning(context.Background()); err != nil {
+		t.Fatalf("StopIfRunning returned error: %v", err)
+	}
+
+	assertRuntimeCommand(t, runner.Commands, "tardigrade stop -c /tmp/tardigrade.conf")
+	assertRuntimeCommand(t, runner.Commands, "pkill -f tardigrade run -c /tmp/tardigrade.conf --daemonized")
 }
 
 func TestTardigradeUpstreamURLDefaultsToLoopback(t *testing.T) {

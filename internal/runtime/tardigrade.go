@@ -141,19 +141,21 @@ func (t Tardigrade) Validate(ctx context.Context) (Result, error) {
 }
 
 func (t Tardigrade) StartOrReload(ctx context.Context) (Result, error) {
-	status, err := t.Status(ctx)
-	if err == nil && tardigradeStatusRunning(status.Stdout) {
-		return t.Reload(ctx)
-	}
+	_, _ = t.Stop(ctx)
+	_, _ = t.StopDaemonized(ctx)
 	return t.run(ctx, "run", "-c", t.ConfigFile, "--daemon")
 }
 
 func (t Tardigrade) StopIfRunning(ctx context.Context) (Result, error) {
-	status, err := t.Status(ctx)
-	if err == nil && tardigradeStatusStopped(status.Stdout) {
-		return status, nil
+	result, err := t.Stop(ctx)
+	cleanupResult, cleanupErr := t.StopDaemonized(ctx)
+	if cleanupErr != nil {
+		return cleanupResult, cleanupErr
 	}
-	return t.Stop(ctx)
+	if err != nil {
+		return cleanupResult, nil
+	}
+	return result, nil
 }
 
 func (t Tardigrade) Reload(ctx context.Context) (Result, error) {
@@ -164,20 +166,34 @@ func (t Tardigrade) Stop(ctx context.Context) (Result, error) {
 	return t.run(ctx, "stop", "-c", t.ConfigFile)
 }
 
+func (t Tardigrade) StopDaemonized(ctx context.Context) (Result, error) {
+	binary := strings.TrimSpace(t.BinaryPath)
+	if binary == "" {
+		binary = DefaultTardigradeBinaryName
+	}
+	pattern := fmt.Sprintf("%s run -c %s --daemonized", filepath.Base(binary), t.ConfigFile)
+	result, _ := t.runCommand(ctx, "pkill", "-f", pattern)
+	return result, nil
+}
+
 func (t Tardigrade) Status(ctx context.Context) (Result, error) {
 	return t.run(ctx, "status", "-c", t.ConfigFile)
 }
 
 func (t Tardigrade) run(ctx context.Context, args ...string) (Result, error) {
-	runner := t.Runner
-	if runner == nil {
-		runner = ExecRunner{}
-	}
 	binary := strings.TrimSpace(t.BinaryPath)
 	if binary == "" {
 		binary = DefaultTardigradeBinaryName
 	}
-	command := Command{Name: binary, Args: args, Dir: t.WorkDir}
+	return t.runCommand(ctx, binary, args...)
+}
+
+func (t Tardigrade) runCommand(ctx context.Context, name string, args ...string) (Result, error) {
+	runner := t.Runner
+	if runner == nil {
+		runner = ExecRunner{}
+	}
+	command := Command{Name: name, Args: args, Dir: t.WorkDir}
 	result, err := runner.Run(ctx, command)
 	return result, CommandError(command, result, err)
 }

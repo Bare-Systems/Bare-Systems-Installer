@@ -470,8 +470,11 @@ func TestStartCommandStartsTardigradeAfterCompose(t *testing.T) {
 	if !runner.sawArgs("up -d") {
 		t.Fatalf("docker compose up was not run: %#v", runner.commands)
 	}
-	if !runner.sawCommand("tardigrade", "status -c "+tardigradeConfigFile) {
-		t.Fatalf("Tardigrade status was not checked: %#v", runner.commands)
+	if !runner.sawCommand("tardigrade", "stop -c "+tardigradeConfigFile) {
+		t.Fatalf("Tardigrade stop was not run before start: %#v", runner.commands)
+	}
+	if !runner.sawCommand("pkill", "tardigrade run -c "+tardigradeConfigFile+" --daemonized") {
+		t.Fatalf("Tardigrade daemon cleanup was not run before start: %#v", runner.commands)
 	}
 	if !runner.sawCommand("tardigrade", "run -c "+tardigradeConfigFile+" --daemon") {
 		t.Fatalf("Tardigrade was not started as a daemon: %#v", runner.commands)

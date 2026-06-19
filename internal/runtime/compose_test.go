@@ -68,3 +68,20 @@ func TestParsePSJSON(t *testing.T) {
 		t.Fatalf("Service = %q", state.Containers[0].Service)
 	}
 }
+
+func TestParsePSJSONLines(t *testing.T) {
+	state, err := ParsePSJSON(`{"ID":"abc","Name":"web","Service":"bear-claw-web","State":"running","Health":"healthy"}
+{"ID":"def","Name":"worker","Service":"koala-worker","State":"exited","Health":""}`)
+	if err != nil {
+		t.Fatalf("ParsePSJSON returned error: %v", err)
+	}
+	if state.Summary.Total != 2 {
+		t.Fatalf("Total = %d, want 2", state.Summary.Total)
+	}
+	if state.Summary.ByState["running"] != 1 || state.Summary.ByState["exited"] != 1 {
+		t.Fatalf("ByState = %#v", state.Summary.ByState)
+	}
+	if state.Containers[1].Service != "koala-worker" {
+		t.Fatalf("Service = %q", state.Containers[1].Service)
+	}
+}

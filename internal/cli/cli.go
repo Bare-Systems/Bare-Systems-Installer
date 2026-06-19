@@ -879,6 +879,9 @@ func (a *App) runServiceCommand(action string, args []string, opts globalOptions
 	options := edgeruntime.ServiceOptions{
 		ProjectDir: opts.projectDir,
 	}
+	if binaryPath, err := os.Executable(); err == nil {
+		options.BinaryPath = binaryPath
+	}
 	var result edgeruntime.ServiceResult
 	var err error
 	switch action {

@@ -118,8 +118,8 @@ func ParsePSJSON(raw string) (RuntimeState, error) {
 		return state, nil
 	}
 
-	var decoded []map[string]any
-	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+	decoded, err := parseComposePSItems(raw)
+	if err != nil {
 		return RuntimeState{}, fmt.Errorf("parse docker compose ps JSON: %w", err)
 	}
 
@@ -144,6 +144,34 @@ func ParsePSJSON(raw string) (RuntimeState, error) {
 		}
 	}
 	return state, nil
+}
+
+func parseComposePSItems(raw string) ([]map[string]any, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	var decoded []map[string]any
+	if strings.HasPrefix(trimmed, "[") {
+		if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+			return nil, err
+		}
+		return decoded, nil
+	}
+
+	for _, line := range strings.Split(trimmed, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var item map[string]any
+		if err := json.Unmarshal([]byte(line), &item); err != nil {
+			return nil, err
+		}
+		decoded = append(decoded, item)
+	}
+	return decoded, nil
 }
 
 func stringField(item map[string]any, names ...string) string {

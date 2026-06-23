@@ -297,6 +297,10 @@ func TestInitCommandSupportsLocalImageRegistry(t *testing.T) {
 	for _, want := range []string{
 		"BARE_IMAGE_REGISTRY=localhost:5000/bare",
 		"BARE_IMAGE_TAG=homelab",
+		"BEARCLAW_AGENT_URL=http://127.0.0.1:8080",
+		"BEARCLAW_LLM_PROVIDER=ollama",
+		"BEARCLAW_LLM_MODEL=qwen2.5:1.5b",
+		"BEARCLAW_URL=http://host.docker.internal/bearclaw",
 		"BEARCLAW_WEB_BIND_ADDRESS=127.0.0.1",
 		"BEARCLAW_WEB_PORT=8080",
 		"# BEARCLAW_WEB_IMAGE=",

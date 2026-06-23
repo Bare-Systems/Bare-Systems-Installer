@@ -44,6 +44,7 @@ type Service struct {
 	ImageRepository string      `json:"imageRepository,omitempty" yaml:"imageRepository,omitempty"`
 	Profiles        []string    `json:"profiles" yaml:"profiles"`
 	Ports           []string    `json:"ports,omitempty" yaml:"ports,omitempty"`
+	ExtraHosts      []string    `json:"extraHosts,omitempty" yaml:"extraHosts,omitempty"`
 	Volumes         []string    `json:"volumes,omitempty" yaml:"volumes,omitempty"`
 	Secrets         []string    `json:"secrets,omitempty" yaml:"secrets,omitempty"`
 	DependsOn       []string    `json:"dependsOn,omitempty" yaml:"dependsOn,omitempty"`

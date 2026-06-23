@@ -169,7 +169,7 @@ func addManifestHealthChecks(builder *reportBuilder, options Options, state edge
 	}
 
 	for _, manifest := range options.Registry.All() {
-		if !manifest.Module.Required && !options.Deployment.ModuleEnabled(manifest.Module.ID) {
+		if !manifest.Module.Required && !options.Deployment.ModuleLocal(manifest.Module.ID) {
 			continue
 		}
 		for _, service := range manifest.Module.Services {

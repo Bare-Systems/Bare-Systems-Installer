@@ -74,12 +74,29 @@ func DerivedEnv(deployment Deployment) Environment {
 		"BARE_IMAGE_TAG":            "latest",
 		"BARE_PROJECT_NAME":         deployment.ComposeProjectName(),
 		"ADMIN_BIND_ADDRESS":        deployment.Spec.Networking.AdminBindAddress,
+		"BEARCLAW_AGENT_URL":        "http://127.0.0.1:8080",
+		"BEARCLAW_LLM_BASE_URL":     "http://127.0.0.1:11434/api/chat",
+		"BEARCLAW_LLM_MODEL":        "qwen2.5:1.5b",
+		"BEARCLAW_LLM_PROVIDER":     "ollama",
+		"BEARCLAW_URL":              "http://host.docker.internal/bearclaw",
 		"BEARCLAW_WEB_BIND_ADDRESS": "127.0.0.1",
 		"BEARCLAW_WEB_PORT":         "8080",
 		"PUBLIC_HTTP_PORT":          strconv.Itoa(deployment.Spec.Networking.PublicHTTPPort),
 		"PUBLIC_HTTPS_PORT":         strconv.Itoa(deployment.Spec.Networking.PublicHTTPSPort),
 		"BARE_COMPOSE_DIR":          deployment.ComposeProjectDirectory(),
 		"BARE_STORAGE_ROOT":         deployment.Spec.Storage.Root,
+	}
+	for moduleID, envKey := range map[string]string{
+		"koala":  "KOALA_URL",
+		"kodiak": "KODIAK_URL",
+		"polar":  "POLAR_URL",
+		"ursa":   "URSA_URL",
+	} {
+		if deployment.ModuleExternal(moduleID) {
+			if url := deployment.ModuleExternalURL(moduleID); url != "" {
+				env[envKey] = url
+			}
+		}
 	}
 	return env
 }

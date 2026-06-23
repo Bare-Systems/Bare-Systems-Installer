@@ -22,6 +22,7 @@ type Service struct {
 	Image       string               `yaml:"image"`
 	Profiles    []string             `yaml:"profiles,omitempty"`
 	Ports       []string             `yaml:"ports,omitempty"`
+	ExtraHosts  []string             `yaml:"extra_hosts,omitempty"`
 	Volumes     []string             `yaml:"volumes,omitempty"`
 	Secrets     []string             `yaml:"secrets,omitempty"`
 	DependsOn   map[string]DependsOn `yaml:"depends_on,omitempty"`
@@ -72,6 +73,9 @@ func BuildModel(deployment config.Deployment, registry modules.Registry, envOver
 	}
 	for _, manifest := range registry.All() {
 		if !manifest.Module.Required && !deployment.ModuleEnabled(manifest.Module.ID) {
+			continue
+		}
+		if !manifest.Module.Required && deployment.ModuleExternal(manifest.Module.ID) {
 			continue
 		}
 		for _, volume := range manifest.Module.Volumes {
@@ -126,6 +130,7 @@ func renderService(service modules.Service, env config.Environment) Service {
 		Image:       resolveImage(service, env),
 		Profiles:    sortedCopy(service.Profiles),
 		Ports:       resolveTemplates(sortedCopy(service.Ports), env),
+		ExtraHosts:  resolveTemplates(sortedCopy(service.ExtraHosts), env),
 		Volumes:     sortedCopy(service.Volumes),
 		Secrets:     sortedCopy(service.Secrets),
 		DependsOn:   renderDependsOn(service.DependsOn),
@@ -256,7 +261,19 @@ func renderHealthcheck(health modules.HealthCheck) *Healthcheck {
 }
 
 func selectedEnv(env config.Environment) map[string]string {
-	keys := []string{"BARE_CHANNEL", "BARE_PROJECT_NAME", "ADMIN_BIND_ADDRESS"}
+	keys := []string{
+		"ADMIN_BIND_ADDRESS",
+		"BARE_CHANNEL",
+		"BARE_PROJECT_NAME",
+		"BEARCLAW_LLM_BASE_URL",
+		"BEARCLAW_LLM_MODEL",
+		"BEARCLAW_LLM_PROVIDER",
+		"BEARCLAW_URL",
+		"KOALA_URL",
+		"KODIAK_URL",
+		"POLAR_URL",
+		"URSA_URL",
+	}
 	selected := map[string]string{}
 	for _, key := range keys {
 		if value, ok := env[key]; ok && value != "" {

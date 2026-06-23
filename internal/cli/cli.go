@@ -1301,11 +1301,12 @@ func writeTardigradeArtifact(ctx deploymentContext) (string, error) {
 func tardigradeConfigOptions(deployment deploymentconfig.Deployment, env deploymentconfig.Environment) edgeruntime.TardigradeConfigOptions {
 	projectRoot := deployment.Spec.Storage.Root
 	return edgeruntime.TardigradeConfigOptions{
-		ListenPort:  edgeruntime.TardigradeListenPort(env["PUBLIC_HTTP_PORT"]),
-		PidFile:     edgeruntime.TardigradePidFile(projectRoot),
-		PublicDir:   edgeruntime.TardigradePublicDir(projectRoot),
-		UpstreamURL: edgeruntime.TardigradeUpstreamURL(env["BEARCLAW_WEB_BIND_ADDRESS"], env["BEARCLAW_WEB_PORT"]),
-		ServerNames: edgeruntime.TardigradeServerNames(env["TARDIGRADE_SERVER_NAMES"]),
+		ListenPort:       edgeruntime.TardigradeListenPort(env["PUBLIC_HTTP_PORT"]),
+		PidFile:          edgeruntime.TardigradePidFile(projectRoot),
+		PublicDir:        edgeruntime.TardigradePublicDir(projectRoot),
+		UpstreamURL:      edgeruntime.TardigradeUpstreamURL(env["BEARCLAW_WEB_BIND_ADDRESS"], env["BEARCLAW_WEB_PORT"]),
+		BearClawAgentURL: env["BEARCLAW_AGENT_URL"],
+		ServerNames:      edgeruntime.TardigradeServerNames(env["TARDIGRADE_SERVER_NAMES"]),
 	}
 }
 

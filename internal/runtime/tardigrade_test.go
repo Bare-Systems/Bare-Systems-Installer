@@ -17,9 +17,11 @@ func TestRenderTardigradeConfig(t *testing.T) {
 	for _, want := range []string{
 		"pid /tmp/tardigrade.pid;",
 		"listen 8088;",
-		"server_name localhost 127.0.0.1;",
+		"server_name localhost 127.0.0.1 host.docker.internal;",
 		"root /srv/bare/public;",
-		"proxy_pass http://127.0.0.1:8080/up;",
+		"proxy_pass http://127.0.0.1:8080/health;",
+		"location /bearclaw/v1/",
+		"auth required;",
 		"proxy_pass http://127.0.0.1:8080;",
 	} {
 		if !strings.Contains(config, want) {

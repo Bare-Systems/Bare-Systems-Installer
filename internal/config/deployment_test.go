@@ -74,6 +74,72 @@ func TestValidateRejectsUnknownModuleAndSecretEnv(t *testing.T) {
 	}
 }
 
+func TestValidateExternalOptionalModuleDoesNotRequireLocalConfig(t *testing.T) {
+	deployment := DefaultDeployment()
+	deployment.Spec.Modules["koala"] = ModuleConfig{
+		Enabled: true,
+		Deployment: ModuleDeploymentConfig{
+			Mode: "external",
+			URL:  "http://jetson:6705",
+		},
+	}
+	deployment.Spec.Runtime.Profiles = []string{"core"}
+	env := MergeEnv(DerivedEnv(deployment), Environment{})
+
+	result, err := ValidateDeployment(deployment, env, modules.BuiltInRegistry())
+	if err != nil {
+		t.Fatalf("ValidateDeployment returned error: %v", err)
+	}
+	if strings.Join(result.EnabledModules, ",") != "core,koala" {
+		t.Fatalf("EnabledModules = %#v, want [core koala]", result.EnabledModules)
+	}
+	if strings.Join(result.Profiles, ",") != "core" {
+		t.Fatalf("Profiles = %#v, want [core]", result.Profiles)
+	}
+	if env["KOALA_URL"] != "http://jetson:6705" {
+		t.Fatalf("KOALA_URL = %q, want external URL", env["KOALA_URL"])
+	}
+}
+
+func TestValidateRejectsInvalidExternalDeployment(t *testing.T) {
+	deployment := DefaultDeployment()
+	deployment.Spec.Modules["core"] = ModuleConfig{
+		Enabled: true,
+		Deployment: ModuleDeploymentConfig{
+			Mode: "external",
+			URL:  "http://core.example",
+		},
+	}
+	deployment.Spec.Modules["koala"] = ModuleConfig{
+		Enabled: true,
+		Deployment: ModuleDeploymentConfig{
+			Mode: "external",
+		},
+	}
+	deployment.Spec.Modules["polar"] = ModuleConfig{
+		Enabled: true,
+		Deployment: ModuleDeploymentConfig{
+			Mode: "remote",
+			URL:  "http://polar.example",
+		},
+	}
+
+	_, err := ValidateDeployment(deployment, DerivedEnv(deployment), modules.BuiltInRegistry())
+	if err == nil {
+		t.Fatalf("expected validation error")
+	}
+	got := err.Error()
+	for _, want := range []string{
+		"core module cannot use external deployment mode",
+		`external module "koala" requires deployment.url`,
+		`module "polar" deployment.mode must be "local" or "external"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("validation error missing %q: %q", want, got)
+		}
+	}
+}
+
 func TestLoadEnvExplicitMissingFails(t *testing.T) {
 	_, err := LoadEnv(filepath.Join(t.TempDir(), ".env"), true)
 	if err == nil {

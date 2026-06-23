@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -42,7 +43,13 @@ type RuntimeSpec struct {
 }
 
 type ModuleConfig struct {
-	Enabled bool `json:"enabled" yaml:"enabled"`
+	Enabled    bool                   `json:"enabled" yaml:"enabled"`
+	Deployment ModuleDeploymentConfig `json:"deployment,omitempty" yaml:"deployment,omitempty"`
+}
+
+type ModuleDeploymentConfig struct {
+	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
+	URL  string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
 type NetworkingSpec struct {
@@ -152,6 +159,34 @@ func (d Deployment) ModuleEnabled(id string) bool {
 	}
 	module, ok := d.Spec.Modules[id]
 	return ok && module.Enabled
+}
+
+func (d Deployment) ModuleLocal(id string) bool {
+	return d.ModuleEnabled(id) && !d.ModuleExternal(id)
+}
+
+func (d Deployment) ModuleExternal(id string) bool {
+	return d.ModuleEnabled(id) && d.ModuleDeploymentMode(id) == "external"
+}
+
+func (d Deployment) ModuleDeploymentMode(id string) string {
+	module, ok := d.Spec.Modules[id]
+	if !ok {
+		return "local"
+	}
+	mode := strings.ToLower(strings.TrimSpace(module.Deployment.Mode))
+	if mode == "" {
+		return "local"
+	}
+	return mode
+}
+
+func (d Deployment) ModuleExternalURL(id string) string {
+	module, ok := d.Spec.Modules[id]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(module.Deployment.URL)
 }
 
 func (d Deployment) ModuleNames() []string {

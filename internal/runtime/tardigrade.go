@@ -21,11 +21,12 @@ type Tardigrade struct {
 }
 
 type TardigradeConfigOptions struct {
-	ListenPort  int
-	PidFile     string
-	PublicDir   string
-	UpstreamURL string
-	ServerNames []string
+	ListenPort       int
+	PidFile          string
+	PublicDir        string
+	UpstreamURL      string
+	BearClawAgentURL string
+	ServerNames      []string
 }
 
 func RenderTardigradeConfig(options TardigradeConfigOptions) string {
@@ -44,13 +45,23 @@ location = /health {
 }
 
 location = /bearclaw/health {
-    proxy_pass %s/up;
+    proxy_pass %s/health;
+}
+
+location /bearclaw/v1/ {
+    proxy_pass %s/v1/;
+    auth required;
+}
+
+location /bearclaw/transcripts {
+    proxy_pass %s/transcripts;
+    auth required;
 }
 
 location / {
     proxy_pass %s;
 }
-`, options.PidFile, options.ListenPort, strings.Join(options.ServerNames, " "), options.PublicDir, options.UpstreamURL, options.UpstreamURL)
+`, options.PidFile, options.ListenPort, strings.Join(options.ServerNames, " "), options.PublicDir, options.BearClawAgentURL, options.BearClawAgentURL, options.BearClawAgentURL, options.UpstreamURL)
 }
 
 func WriteTardigradeConfig(path string, options TardigradeConfigOptions) error {
@@ -84,12 +95,16 @@ func normalizeTardigradeConfigOptions(options TardigradeConfigOptions) Tardigrad
 	if strings.TrimSpace(options.UpstreamURL) == "" {
 		options.UpstreamURL = "http://127.0.0.1:8080"
 	}
+	if strings.TrimSpace(options.BearClawAgentURL) == "" {
+		options.BearClawAgentURL = "http://127.0.0.1:8080"
+	}
 	if len(options.ServerNames) == 0 {
-		options.ServerNames = []string{"localhost", "127.0.0.1"}
+		options.ServerNames = []string{"localhost", "127.0.0.1", "host.docker.internal"}
 	}
 	options.PidFile = strings.TrimSpace(options.PidFile)
 	options.PublicDir = strings.TrimSpace(options.PublicDir)
 	options.UpstreamURL = strings.TrimRight(strings.TrimSpace(options.UpstreamURL), "/")
+	options.BearClawAgentURL = strings.TrimRight(strings.TrimSpace(options.BearClawAgentURL), "/")
 	options.ServerNames = normalizeTardigradeServerNames(options.ServerNames)
 	return options
 }
@@ -116,7 +131,7 @@ func normalizeTardigradeServerNames(names []string) []string {
 		normalized = append(normalized, name)
 	}
 	if len(normalized) == 0 {
-		return []string{"localhost", "127.0.0.1"}
+		return []string{"localhost", "127.0.0.1", "host.docker.internal"}
 	}
 	return normalized
 }

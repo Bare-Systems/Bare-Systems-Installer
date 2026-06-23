@@ -23,6 +23,10 @@ func TestRenderDefaultDeployment(t *testing.T) {
 		"curl -fsS http://localhost/up >/dev/null",
 		"SECRET_KEY_BASE_DUMMY: \"1\"",
 		"DATABASE_URL: postgres://bare@bear-claw-db:5432/bearclaw_production",
+		"BEARCLAW_URL: http://host.docker.internal/bearclaw",
+		"BEARCLAW_LLM_PROVIDER: ollama",
+		"BEARCLAW_LLM_MODEL: qwen2.5:1.5b",
+		"host.docker.internal:host-gateway",
 		"POSTGRES_HOST_AUTH_METHOD: trust",
 		"condition: service_healthy",
 		"bearclaw-db:/var/lib/postgresql/data",
@@ -56,6 +60,31 @@ func TestRenderEnabledOptionalModule(t *testing.T) {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("rendered compose missing %q:\n%s", want, string(data))
 		}
+	}
+}
+
+func TestRenderSkipsExternalOptionalModule(t *testing.T) {
+	deployment := config.DefaultDeployment()
+	deployment.Spec.Modules["koala"] = config.ModuleConfig{
+		Enabled: true,
+		Deployment: config.ModuleDeploymentConfig{
+			Mode: "external",
+			URL:  "http://jetson:6705",
+		},
+	}
+
+	data, err := Render(deployment, modules.BuiltInRegistry())
+	if err != nil {
+		t.Fatalf("Render returned error: %v", err)
+	}
+	out := string(data)
+	for _, notWant := range []string{"koala-orchestrator:", "koala-worker:", "koala-data:"} {
+		if strings.Contains(out, notWant) {
+			t.Fatalf("rendered compose should not include %q:\n%s", notWant, out)
+		}
+	}
+	if !strings.Contains(out, "KOALA_URL: http://jetson:6705") {
+		t.Fatalf("rendered compose missing external KOALA_URL:\n%s", out)
 	}
 }
 

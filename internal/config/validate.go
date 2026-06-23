@@ -50,6 +50,22 @@ func ValidateDeployment(deployment Deployment, env Environment, registry modules
 	for _, moduleName := range deployment.ModuleNames() {
 		if _, ok := registry.Get(moduleName); !ok {
 			problems = append(problems, fmt.Sprintf("unknown module %q", moduleName))
+			continue
+		}
+		module := deployment.Spec.Modules[moduleName]
+		mode := deployment.ModuleDeploymentMode(moduleName)
+		switch mode {
+		case "local", "external":
+		default:
+			problems = append(problems, fmt.Sprintf("module %q deployment.mode must be \"local\" or \"external\"", moduleName))
+		}
+		if module.Enabled && mode == "external" {
+			if moduleName == "core" {
+				problems = append(problems, "core module cannot use external deployment mode")
+			}
+			if strings.TrimSpace(module.Deployment.URL) == "" {
+				problems = append(problems, fmt.Sprintf("external module %q requires deployment.url", moduleName))
+			}
 		}
 	}
 
@@ -60,8 +76,11 @@ func ValidateDeployment(deployment Deployment, env Environment, registry modules
 	activeProfiles := map[string]bool{}
 	enabledModules := []string{}
 	for _, manifest := range registry.All() {
-		if manifest.Module.Required || deployment.ModuleEnabled(manifest.Module.ID) {
+		moduleID := manifest.Module.ID
+		if manifest.Module.Required || deployment.ModuleEnabled(moduleID) {
 			enabledModules = append(enabledModules, manifest.Module.ID)
+		}
+		if manifest.Module.Required || deployment.ModuleLocal(moduleID) {
 			for _, profile := range manifest.Module.Profiles {
 				activeProfiles[profile] = true
 			}
